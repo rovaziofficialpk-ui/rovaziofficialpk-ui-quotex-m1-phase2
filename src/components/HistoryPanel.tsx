@@ -46,7 +46,11 @@ export function HistoryPanel({ history, onDelete, onClear, onExportJson, onExpor
                   <span className="text-[10px] text-slate-500 truncate">{item.pattern}</span>
                   <span className={`text-[10px] font-bold ${colors[item.bias]}`}>{item.confidence}%</span>
                 </div>
-                <div className="flex justify-between mt-1 text-[9px] text-slate-600"><span>Gate {item.minConfidence}%</span><span>{(item.responseTimeMs / 1000).toFixed(2)}s</span></div>
+                <div className="grid grid-cols-3 gap-1 mt-2 text-[9px] text-slate-600">
+                  <span>Gate {item.minConfidence}%</span>
+                  <span>Confirm {item.confirmationCount ?? '—'}/4</span>
+                  <span className="text-right">{(item.responseTimeMs / 1000).toFixed(2)}s</span>
+                </div>
               </div>
             ))}
           </div>

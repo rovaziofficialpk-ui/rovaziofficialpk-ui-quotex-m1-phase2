@@ -28,7 +28,9 @@ export function exportHistoryJson(history: SignalHistoryItem[]): void {
 export function exportHistoryCsv(history: SignalHistoryItem[]): void {
   const headers = [
     'createdAt', 'pair', 'finalBias', 'proposedBias', 'confidence', 'threshold', 'timeframe',
-    'chartQuality', 'pattern', 'entry', 'gateReason', 'responseTimeMs', 'warnings',
+    'chartQuality', 'inputQualityScore', 'confirmationScore', 'confirmationCount', 'opposingConfirmations',
+    'trend', 'momentum', 'structure', 'candleSignal', 'supportResistance', 'contextImagesUsed',
+    'contextAlignment', 'contextNotes', 'pattern', 'entry', 'gateReason', 'responseTimeMs', 'evidence', 'warnings',
   ];
   const rows = history.map((item) => [
     item.createdAt,
@@ -39,10 +41,23 @@ export function exportHistoryCsv(history: SignalHistoryItem[]): void {
     item.minConfidence,
     item.timeframe,
     item.chartQuality,
+    item.inputQualityScore ?? '',
+    item.confirmationScore ?? '',
+    item.confirmationCount ?? '',
+    item.opposingConfirmations ?? '',
+    item.trend ?? '',
+    item.momentum ?? '',
+    item.structure ?? '',
+    item.candleSignal ?? '',
+    item.supportResistance ?? '',
+    item.contextImagesUsed ?? '',
+    item.contextAlignment ?? '',
+    item.contextNotes ?? '',
     item.pattern,
     item.entry,
     item.gateReason || '',
     item.responseTimeMs,
+    item.evidence?.join(' | ') || '',
     item.warnings.join(' | '),
   ]);
   const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
