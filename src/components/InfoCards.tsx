@@ -2,12 +2,12 @@ export function InfoCards() {
   return (
     <>
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
-        <h3 className="text-xs text-green-400 uppercase tracking-wider font-mono mb-2">📡 Live-tab workflow</h3>
+        <h3 className="text-xs text-green-400 uppercase tracking-wider font-mono mb-2">📡 Smart live monitoring</h3>
         <ul className="text-[10px] text-slate-400 space-y-1.5 leading-relaxed">
-          <li>• Click Add Live Tab and choose the chart tab in the browser picker.</li>
-          <li>• Keep the shared chart open; the app does not capture continuously.</li>
-          <li>• Every Analyze click captures a fresh frame before the AI request.</li>
-          <li>• Local preflight can reject an unreadable live frame before API usage.</li>
+          <li>• Click Add Live Tab, then use Smart Auto Test to watch for meaningful chart changes.</li>
+          <li>• The adaptive change detector skips near-duplicate frames before AI usage.</li>
+          <li>• Auto Test uses a 15s AI cooldown, local quality gate, and Phase 3 evidence gate.</li>
+          <li>• Two matching non-neutral auto results are tracked as a stronger stability streak, not a guaranteed outcome.</li>
           <li>• The browser can stop sharing at any time from its own sharing indicator.</li>
         </ul>
       </div>

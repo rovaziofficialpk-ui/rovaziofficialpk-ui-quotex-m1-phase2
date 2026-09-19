@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { ApiKeyPanel } from './components/ApiKeyPanel';
+import { AutoTestPanel, type AutoTestStats, type AutoTestStatus } from './components/AutoTestPanel';
 import { ContextImagesPanel } from './components/ContextImagesPanel';
 import { Header } from './components/Header';
 import { HistoryPanel } from './components/HistoryPanel';
@@ -8,6 +9,15 @@ import { InfoCards } from './components/InfoCards';
 import { LiveTabPanel } from './components/LiveTabPanel';
 import { SignalCard } from './components/SignalCard';
 import { UploadPanel } from './components/UploadPanel';
+import {
+  AUTO_AI_COOLDOWN_MS,
+  AUTO_CAPTURE_INTERVAL_SECONDS,
+  AUTO_MAX_CONSECUTIVE_ERRORS,
+  AUTO_MIN_CHANGE_SCORE,
+  buildAutoFrameFingerprint,
+  compareAutoFrames,
+  type AutoFrameFingerprint,
+} from './services/autoTest';
 import { analyzeChartWithGroq, humanizeGroqError, testGroqConnection, type ContextImage, type ContextLabel } from './services/groq';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
 import { clearApiKey, HISTORY_LIMIT, loadApiKey, loadHistory, loadSettings, saveApiKey, saveHistory, saveSettings } from './services/storage';
@@ -30,6 +40,15 @@ type AnalysisStage = 'idle' | 'capturing' | 'preflight' | 'ai';
 
 function App() {
   const liveStreamRef = useRef<MediaStream | null>(null);
+  const autoTimerRef = useRef<number | null>(null);
+  const autoRunningRef = useRef(false);
+  const autoCycleBusyRef = useRef(false);
+  const autoCycleRef = useRef<() => Promise<void>>(async () => undefined);
+  const autoBaselineRef = useRef<AutoFrameFingerprint | null>(null);
+  const autoLastAiAtRef = useRef(0);
+  const autoConsecutiveErrorsRef = useRef(0);
+  const autoLastBiasRef = useRef<string | null>(null);
+  const autoStableStreakRef = useRef(0);
   const [apiKey, setApiKey] = useState(() => loadApiKey());
   const [image, setImage] = useState<string | null>(null);
   const [primarySource, setPrimarySource] = useState<PrimarySource>('upload');
@@ -46,15 +65,32 @@ function App() {
   const [history, setHistory] = useState<SignalHistoryItem[]>(() => loadHistory());
   const [pasteToast, setPasteToast] = useState(false);
   const [minConfidence, setMinConfidence] = useState(() => loadSettings().minConfidence);
+  const [autoIntervalSeconds, setAutoIntervalSeconds] = useState(() => loadSettings().autoIntervalSeconds || AUTO_CAPTURE_INTERVAL_SECONDS);
+  const [autoTestEnabled, setAutoTestEnabled] = useState(false);
+  const [autoStats, setAutoStats] = useState<AutoTestStats>({
+    status: 'idle',
+    checks: 0,
+    aiRuns: 0,
+    skippedSimilar: 0,
+    skippedCooldown: 0,
+    qualityBlocks: 0,
+    errors: 0,
+    lastChangeScore: null,
+    lastBias: null,
+    stableStreak: 0,
+    lastRunAt: null,
+  });
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
 
   const liveTabSupported = isLiveTabCaptureSupported();
   const liveTabActive = Boolean(liveTabInfo && isLiveTabStreamActive(liveStreamRef.current));
 
-  useEffect(() => saveSettings({ minConfidence }), [minConfidence]);
+  useEffect(() => saveSettings({ minConfidence, autoIntervalSeconds }), [minConfidence, autoIntervalSeconds]);
   useEffect(() => saveHistory(history), [history]);
 
   useEffect(() => () => {
+    autoRunningRef.current = false;
+    if (autoTimerRef.current !== null) window.clearTimeout(autoTimerRef.current);
     stopLiveTabShare(liveStreamRef.current);
     liveStreamRef.current = null;
   }, []);
@@ -88,7 +124,31 @@ function App() {
     reader.readAsDataURL(file);
   });
 
+  const clearAutoTimer = () => {
+    if (autoTimerRef.current !== null) {
+      window.clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+  };
+
+  const stopAutoTest = (status: AutoTestStatus = 'idle') => {
+    autoRunningRef.current = false;
+    autoCycleBusyRef.current = false;
+    clearAutoTimer();
+    setAutoTestEnabled(false);
+    setAutoStats((current) => ({ ...current, status }));
+  };
+
+  const scheduleAutoCycle = (delayMs = autoIntervalSeconds * 1000) => {
+    clearAutoTimer();
+    if (!autoRunningRef.current) return;
+    autoTimerRef.current = window.setTimeout(() => {
+      void autoCycleRef.current();
+    }, delayMs);
+  };
+
   const stopCurrentLiveTab = () => {
+    stopAutoTest();
     stopLiveTabShare(liveStreamRef.current);
     liveStreamRef.current = null;
     setLiveTabInfo(null);
@@ -151,6 +211,7 @@ function App() {
   };
 
   const handleStartLiveTab = async () => {
+    if (autoRunningRef.current) stopAutoTest();
     setLiveTabBusy(true);
     setError('');
     let newStream: MediaStream | null = null;
@@ -169,6 +230,7 @@ function App() {
       const track = newStream.getVideoTracks()[0];
       track?.addEventListener('ended', () => {
         if (liveStreamRef.current === newStream) {
+          stopAutoTest();
           liveStreamRef.current = null;
           setLiveTabInfo(null);
           setLiveTabBusy(false);
@@ -227,12 +289,14 @@ function App() {
   };
 
   const handleApiKeyChange = (value: string) => {
+    if (autoRunningRef.current) stopAutoTest();
     setApiKey(value);
     saveApiKey(value);
     setTestState('idle');
   };
 
   const handleApiKeyClear = () => {
+    if (autoRunningRef.current) stopAutoTest();
     setApiKey('');
     clearApiKey();
     setTestState('idle');
@@ -251,7 +315,187 @@ function App() {
     }
   };
 
+  const executeAiAnalysis = async (analysisImage: string, analysisPreflight: ImagePreflightResult): Promise<TradeSignal> => {
+    const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
+      .filter((label) => Boolean(contextImages[label]))
+      .map((label) => ({ label, image: contextImages[label] as string }));
+
+    const result = await analyzeChartWithGroq({
+      apiKey,
+      image: analysisImage,
+      minConfidence,
+      preflight: analysisPreflight,
+      contextImages: extraImages,
+    });
+    setSignal(result.signal);
+    setResponseTime(result.responseTimeMs);
+    const historyItem = createHistoryItem(result.signal, result.responseTimeMs, minConfidence);
+    setHistory((current) => [historyItem, ...current].slice(0, HISTORY_LIMIT));
+    return result.signal;
+  };
+
+  const handleToggleAutoTest = () => {
+    if (autoRunningRef.current) {
+      stopAutoTest();
+      return;
+    }
+    if (!apiKey.trim()) {
+      setError('Add your Groq API key before starting Auto Test.');
+      return;
+    }
+    if (!liveTabActive) {
+      setError('Add a live browser tab before starting Auto Test.');
+      return;
+    }
+
+    autoRunningRef.current = true;
+    autoCycleBusyRef.current = false;
+    autoBaselineRef.current = null;
+    autoLastAiAtRef.current = 0;
+    autoConsecutiveErrorsRef.current = 0;
+    autoLastBiasRef.current = null;
+    autoStableStreakRef.current = 0;
+    setAutoTestEnabled(true);
+    setAutoStats({
+      status: 'watching',
+      checks: 0,
+      aiRuns: 0,
+      skippedSimilar: 0,
+      skippedCooldown: 0,
+      qualityBlocks: 0,
+      errors: 0,
+      lastChangeScore: null,
+      lastBias: null,
+      stableStreak: 0,
+      lastRunAt: null,
+    });
+    setError('');
+    scheduleAutoCycle(0);
+  };
+
+  autoCycleRef.current = async () => {
+    if (!autoRunningRef.current) return;
+    if (autoCycleBusyRef.current || analyzing || liveTabBusy) {
+      scheduleAutoCycle(1000);
+      return;
+    }
+
+    const stream = liveStreamRef.current;
+    if (!isLiveTabStreamActive(stream)) {
+      setError('Auto Test stopped because live tab sharing ended. Add the chart tab again to restart it.');
+      stopAutoTest('error');
+      return;
+    }
+    if (!apiKey.trim()) {
+      setError('Auto Test stopped because the Groq API key is missing.');
+      stopAutoTest('error');
+      return;
+    }
+
+    autoCycleBusyRef.current = true;
+    setAutoStats((current) => ({ ...current, status: 'capturing' }));
+
+    try {
+      const frame = await captureLiveTabFrame(stream as MediaStream);
+      const fingerprint = await buildAutoFrameFingerprint(frame);
+      const baseline = autoBaselineRef.current;
+      const change = baseline
+        ? compareAutoFrames(baseline, fingerprint)
+        : { score: 100, meanDifference: 100, changedPixels: 100, edgeDifference: 100 };
+
+      setAutoStats((current) => ({
+        ...current,
+        checks: current.checks + 1,
+        lastChangeScore: change.score,
+      }));
+
+      if (baseline && change.score < AUTO_MIN_CHANGE_SCORE) {
+        setAutoStats((current) => ({
+          ...current,
+          status: 'watching',
+          skippedSimilar: current.skippedSimilar + 1,
+        }));
+        return;
+      }
+
+      const elapsedSinceAi = Date.now() - autoLastAiAtRef.current;
+      if (autoLastAiAtRef.current > 0 && elapsedSinceAi < AUTO_AI_COOLDOWN_MS) {
+        setAutoStats((current) => ({
+          ...current,
+          status: 'cooldown',
+          skippedCooldown: current.skippedCooldown + 1,
+        }));
+        return;
+      }
+
+      setAnalyzing(true);
+      setAnalysisStage('preflight');
+      setPreflightLoading(true);
+      setAutoStats((current) => ({ ...current, status: 'preflight' }));
+      const quality = await inspectPrimaryFrame(frame, 'live');
+
+      if (quality.status === 'block') {
+        autoBaselineRef.current = fingerprint;
+        setAutoStats((current) => ({
+          ...current,
+          status: 'quality-block',
+          qualityBlocks: current.qualityBlocks + 1,
+        }));
+        return;
+      }
+
+      setAnalysisStage('ai');
+      setAutoStats((current) => ({ ...current, status: 'analyzing' }));
+      autoLastAiAtRef.current = Date.now();
+      const resultSignal = await executeAiAnalysis(frame, quality);
+      setError('');
+      autoBaselineRef.current = fingerprint;
+      autoConsecutiveErrorsRef.current = 0;
+
+      if (resultSignal.bias !== 'NEUTRAL' && resultSignal.bias === autoLastBiasRef.current) {
+        autoStableStreakRef.current += 1;
+      } else if (resultSignal.bias !== 'NEUTRAL') {
+        autoStableStreakRef.current = 1;
+      } else {
+        autoStableStreakRef.current = 0;
+      }
+      autoLastBiasRef.current = resultSignal.bias;
+
+      setAutoStats((current) => ({
+        ...current,
+        status: 'watching',
+        aiRuns: current.aiRuns + 1,
+        lastBias: resultSignal.bias,
+        stableStreak: autoStableStreakRef.current,
+        lastRunAt: Date.now(),
+      }));
+    } catch (err) {
+      autoConsecutiveErrorsRef.current += 1;
+      setAutoStats((current) => ({
+        ...current,
+        status: 'error',
+        errors: current.errors + 1,
+      }));
+      setError(err instanceof DOMException ? humanizeTabCaptureError(err) : humanizeGroqError(err));
+
+      if (autoConsecutiveErrorsRef.current >= AUTO_MAX_CONSECUTIVE_ERRORS) {
+        setError('Auto Test paused after 3 consecutive failures. Check the shared tab, connection, and Groq API status, then start it again.');
+        stopAutoTest('error');
+      }
+    } finally {
+      setPreflightLoading(false);
+      setAnalyzing(false);
+      setAnalysisStage('idle');
+      autoCycleBusyRef.current = false;
+      if (autoRunningRef.current) scheduleAutoCycle();
+    }
+  };
+
   const analyzeChart = async () => {
+    if (autoRunningRef.current) {
+      setError('Auto Test is running. Stop Auto Test before starting a manual analysis.');
+      return;
+    }
     if (!apiKey.trim()) {
       setError('Add your Groq API key first.');
       return;
@@ -287,22 +531,8 @@ function App() {
           : 'This screenshot failed local preflight. Upload a clearer M1 screenshot before analysis.');
       }
 
-      const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
-        .filter((label) => Boolean(contextImages[label]))
-        .map((label) => ({ label, image: contextImages[label] as string }));
-
       setAnalysisStage('ai');
-      const result = await analyzeChartWithGroq({
-        apiKey,
-        image: analysisImage,
-        minConfidence,
-        preflight: analysisPreflight,
-        contextImages: extraImages,
-      });
-      setSignal(result.signal);
-      setResponseTime(result.responseTimeMs);
-      const historyItem = createHistoryItem(result.signal, result.responseTimeMs, minConfidence);
-      setHistory((current) => [historyItem, ...current].slice(0, HISTORY_LIMIT));
+      await executeAiAnalysis(analysisImage, analysisPreflight);
     } catch (err) {
       setError(humanizeGroqError(err));
     } finally {
@@ -333,6 +563,7 @@ function App() {
   const canAnalyze = Boolean(
     apiKey.trim()
     && !preflightLoading
+    && !autoTestEnabled
     && (liveTabActive || (preflight && preflight.status !== 'block')),
   );
 
@@ -393,6 +624,18 @@ function App() {
                     onStop={handleStopLiveTab}
                   />
 
+                  {liveTabActive && (
+                    <AutoTestPanel
+                      enabled={autoTestEnabled}
+                      canStart={Boolean(apiKey.trim() && liveTabActive)}
+                      busy={liveTabBusy || analyzing}
+                      intervalSeconds={autoIntervalSeconds}
+                      stats={autoStats}
+                      onToggle={handleToggleAutoTest}
+                      onIntervalChange={setAutoIntervalSeconds}
+                    />
+                  )}
+
                   <ImagePreflightPanel result={preflight} loading={preflightLoading} />
 
                   {!analyzing && !signal && (
@@ -429,7 +672,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.1 • Live browser-tab capture • Fresh frame on Analyze • Local preflight • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.2 • Smart Auto Test • Adaptive change gate • Live browser-tab capture • Educational analysis only</div></footer>
     </div>
   );
 }

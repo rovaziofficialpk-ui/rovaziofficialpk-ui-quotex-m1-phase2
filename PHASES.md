@@ -33,6 +33,16 @@
 - Fresh live frames still pass the Phase 3 local preflight before AI usage
 - Uploaded and pasted screenshots remain supported
 
+## Phase 3.2 — Smart Auto Test ✅
+- Adaptive live-tab frame sampling (3/5/10/15/30 seconds; 5s recommended)
+- Hybrid frame-change detector using luminance, changed-pixel ratio, and edge differences
+- Near-duplicate frames skipped before AI requests
+- 15-second AI cooldown
+- Existing local preflight + M1/evidence/context gates preserved
+- Non-neutral signal stability streak tracking
+- Circuit breaker after 3 consecutive failures
+- Auto Test never executes trades
+
 ## Phase 4 — Validation & analytics ⏭️
 - Outcome labeling
 - Backtest/forward-test dataset format

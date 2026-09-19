@@ -24,7 +24,7 @@ export function LiveTabPanel({ info, active, busy, onCapturePreview, onChangeTab
             <span className="text-xs font-black uppercase tracking-wider text-green-400">Live tab connected</span>
           </div>
           <div className="mt-1 truncate text-xs text-slate-300">{info.label}</div>
-          <div className="mt-0.5 text-[10px] text-slate-500">Analyze captures a fresh frame from this shared surface automatically. Nothing is captured while idle.</div>
+          <div className="mt-0.5 text-[10px] text-slate-500">Manual Analyze captures a fresh frame. Smart Auto Test can sample this shared surface periodically when you enable it.</div>
         </div>
 
         <div className="flex flex-wrap gap-2">
