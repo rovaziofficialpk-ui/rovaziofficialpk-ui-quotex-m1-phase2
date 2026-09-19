@@ -26,6 +26,13 @@
 - Opposing-evidence and higher-timeframe conflict gates
 - Evidence score, context alignment, and quality metrics in UI/history
 
+## Phase 3.1 — Live browser tab capture ✅
+- Explicit browser tab/window picker via secure display capture
+- Fresh chart frame captured automatically on every Analyze click
+- Live preview refresh / change tab / stop sharing controls
+- Fresh live frames still pass the Phase 3 local preflight before AI usage
+- Uploaded and pasted screenshots remain supported
+
 ## Phase 4 — Validation & analytics ⏭️
 - Outcome labeling
 - Backtest/forward-test dataset format

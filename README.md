@@ -1,8 +1,11 @@
-# Quotex M1 Chart Signal AI — Phase 3
+# Quotex M1 Chart Signal AI — Phase 3.1
 
 A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qwen vision model.
 
-## Phase 3 highlights
+## Phase 3.1 highlights
+- Live browser-tab sharing through the browser permission picker
+- Fresh live-tab screenshot captured automatically on every Analyze click
+- Live preview refresh, change-tab, and stop-sharing controls
 - Browser-side screenshot preflight before the API call
 - Strict structured AI output
 - Hard confidence, timeframe, chart-quality, confirmation, and context-conflict gates
@@ -22,6 +25,9 @@ npm run dev
 
 ## Privacy / API key
 This version is BYOK. The Groq API key is stored in the current browser's localStorage and is not embedded in the build. Phase 5 is reserved for a server-side proxy/authentication design.
+
+## Live tab privacy
+A normal website cannot silently enumerate or capture arbitrary browser tabs. You must explicitly select a tab/window in the browser share picker. The selected stream remains in memory only for the current page session; a still frame is captured when you request preview/analysis.
 
 ## Important
 The displayed confidence is AI setup confidence based on visible chart evidence. The Phase 3 confirmation score measures internal agreement among four AI-described evidence categories. Neither is a measured probability of profit. This tool is for educational analysis only and does not execute trades.

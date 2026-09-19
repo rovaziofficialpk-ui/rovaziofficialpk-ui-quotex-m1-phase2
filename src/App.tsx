@@ -1,27 +1,45 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { ApiKeyPanel } from './components/ApiKeyPanel';
 import { ContextImagesPanel } from './components/ContextImagesPanel';
 import { Header } from './components/Header';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ImagePreflightPanel } from './components/ImagePreflightPanel';
 import { InfoCards } from './components/InfoCards';
+import { LiveTabPanel } from './components/LiveTabPanel';
 import { SignalCard } from './components/SignalCard';
 import { UploadPanel } from './components/UploadPanel';
 import { analyzeChartWithGroq, humanizeGroqError, testGroqConnection, type ContextImage, type ContextLabel } from './services/groq';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
 import { clearApiKey, HISTORY_LIMIT, loadApiKey, loadHistory, loadSettings, saveApiKey, saveHistory, saveSettings } from './services/storage';
+import {
+  captureLiveTabFrame,
+  getLiveTabInfo,
+  humanizeTabCaptureError,
+  isLiveTabCaptureSupported,
+  isLiveTabStreamActive,
+  requestLiveTabShare,
+  stopLiveTabShare,
+  type LiveTabInfo,
+} from './services/tabCapture';
 import { createHistoryItem, type SignalHistoryItem, type TradeSignal } from './signalLogic';
 import { exportHistoryCsv, exportHistoryJson } from './utils/exportHistory';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+type PrimarySource = 'upload' | 'paste' | 'live';
+type AnalysisStage = 'idle' | 'capturing' | 'preflight' | 'ai';
 
 function App() {
+  const liveStreamRef = useRef<MediaStream | null>(null);
   const [apiKey, setApiKey] = useState(() => loadApiKey());
   const [image, setImage] = useState<string | null>(null);
+  const [primarySource, setPrimarySource] = useState<PrimarySource>('upload');
+  const [liveTabInfo, setLiveTabInfo] = useState<LiveTabInfo | null>(null);
+  const [liveTabBusy, setLiveTabBusy] = useState(false);
   const [contextImages, setContextImages] = useState<Record<ContextLabel, string | null>>({ M5: null, H1: null });
   const [preflight, setPreflight] = useState<ImagePreflightResult | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState<AnalysisStage>('idle');
   const [signal, setSignal] = useState<TradeSignal | null>(null);
   const [error, setError] = useState('');
   const [responseTime, setResponseTime] = useState<number | null>(null);
@@ -30,8 +48,16 @@ function App() {
   const [minConfidence, setMinConfidence] = useState(() => loadSettings().minConfidence);
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
 
+  const liveTabSupported = isLiveTabCaptureSupported();
+  const liveTabActive = Boolean(liveTabInfo && isLiveTabStreamActive(liveStreamRef.current));
+
   useEffect(() => saveSettings({ minConfidence }), [minConfidence]);
   useEffect(() => saveHistory(history), [history]);
+
+  useEffect(() => () => {
+    stopLiveTabShare(liveStreamRef.current);
+    liveStreamRef.current = null;
+  }, []);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -62,6 +88,30 @@ function App() {
     reader.readAsDataURL(file);
   });
 
+  const stopCurrentLiveTab = () => {
+    stopLiveTabShare(liveStreamRef.current);
+    liveStreamRef.current = null;
+    setLiveTabInfo(null);
+    setLiveTabBusy(false);
+  };
+
+  const inspectPrimaryFrame = async (dataUrl: string, source: PrimarySource): Promise<ImagePreflightResult> => {
+    setImage(dataUrl);
+    setPrimarySource(source);
+    setSignal(null);
+    setResponseTime(null);
+    setPreflightLoading(true);
+    setPreflight(null);
+
+    try {
+      const result = await analyzeImagePreflight(dataUrl);
+      setPreflight(result);
+      return result;
+    } finally {
+      setPreflightLoading(false);
+    }
+  };
+
   const loadPrimaryImage = async (file: File, pasted = false) => {
     const validationError = validateImageFile(file);
     if (validationError) {
@@ -69,26 +119,83 @@ function App() {
       return;
     }
 
-    setPreflightLoading(true);
-    setPreflight(null);
-    setSignal(null);
-    setResponseTime(null);
+    stopCurrentLiveTab();
     setError('');
 
     try {
       const dataUrl = await readImageFile(file);
-      setImage(dataUrl);
-      const result = await analyzeImagePreflight(dataUrl);
-      setPreflight(result);
+      await inspectPrimaryFrame(dataUrl, pasted ? 'paste' : 'upload');
       if (pasted) {
         setPasteToast(true);
         window.setTimeout(() => setPasteToast(false), 1800);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not inspect this image.');
-    } finally {
-      setPreflightLoading(false);
     }
+  };
+
+  const captureFreshLiveFrame = async (): Promise<{ image: string; preflight: ImagePreflightResult }> => {
+    const stream = liveStreamRef.current;
+    if (!isLiveTabStreamActive(stream)) {
+      throw new Error('Live tab sharing has stopped. Add the chart tab again before analysis.');
+    }
+
+    setLiveTabBusy(true);
+    try {
+      const dataUrl = await captureLiveTabFrame(stream as MediaStream);
+      const result = await inspectPrimaryFrame(dataUrl, 'live');
+      return { image: dataUrl, preflight: result };
+    } finally {
+      setLiveTabBusy(false);
+    }
+  };
+
+  const handleStartLiveTab = async () => {
+    setLiveTabBusy(true);
+    setError('');
+    let newStream: MediaStream | null = null;
+
+    try {
+      newStream = await requestLiveTabShare();
+      const oldStream = liveStreamRef.current;
+      liveStreamRef.current = newStream;
+      if (oldStream && oldStream !== newStream) stopLiveTabShare(oldStream);
+
+      const info = getLiveTabInfo(newStream);
+      setLiveTabInfo(info);
+      setSignal(null);
+      setResponseTime(null);
+
+      const track = newStream.getVideoTracks()[0];
+      track?.addEventListener('ended', () => {
+        if (liveStreamRef.current === newStream) {
+          liveStreamRef.current = null;
+          setLiveTabInfo(null);
+          setLiveTabBusy(false);
+        }
+      }, { once: true });
+
+      const dataUrl = await captureLiveTabFrame(newStream);
+      await inspectPrimaryFrame(dataUrl, 'live');
+    } catch (err) {
+      if (newStream && liveStreamRef.current === newStream) stopCurrentLiveTab();
+      setError(humanizeTabCaptureError(err));
+    } finally {
+      setLiveTabBusy(false);
+    }
+  };
+
+  const handleRefreshLivePreview = async () => {
+    setError('');
+    try {
+      await captureFreshLiveFrame();
+    } catch (err) {
+      setError(humanizeTabCaptureError(err));
+    }
+  };
+
+  const handleStopLiveTab = () => {
+    stopCurrentLiveTab();
   };
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
@@ -149,33 +256,47 @@ function App() {
       setError('Add your Groq API key first.');
       return;
     }
-    if (!image) {
-      setError('Upload or paste an M1 chart screenshot first.');
+    if (!image && !liveTabActive) {
+      setError('Add a live browser tab or upload an M1 chart screenshot first.');
       return;
     }
-    if (!preflight) {
-      setError('Wait for the local screenshot preflight to finish.');
-      return;
-    }
-    if (preflight.status === 'block') {
-      setError('This screenshot failed the local preflight. Upload a clearer M1 screenshot before analysis.');
-      return;
-    }
-
-    const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
-      .filter((label) => Boolean(contextImages[label]))
-      .map((label) => ({ label, image: contextImages[label] as string }));
 
     setAnalyzing(true);
-    setError('');
     setSignal(null);
     setResponseTime(null);
+    setError('');
+
     try {
+      let analysisImage = image;
+      let analysisPreflight = preflight;
+
+      if (liveTabActive) {
+        setAnalysisStage('capturing');
+        setPreflightLoading(true);
+        const freshFrame = await captureFreshLiveFrame();
+        analysisImage = freshFrame.image;
+        analysisPreflight = freshFrame.preflight;
+      }
+
+      setAnalysisStage('preflight');
+      if (!analysisImage) throw new Error('No chart frame is available for analysis.');
+      if (!analysisPreflight) throw new Error('Wait for the local screenshot preflight to finish.');
+      if (analysisPreflight.status === 'block') {
+        throw new Error(liveTabActive
+          ? 'The freshly captured live-tab frame failed local preflight. Make the chart clearer or enlarge it, then click Analyze again.'
+          : 'This screenshot failed local preflight. Upload a clearer M1 screenshot before analysis.');
+      }
+
+      const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
+        .filter((label) => Boolean(contextImages[label]))
+        .map((label) => ({ label, image: contextImages[label] as string }));
+
+      setAnalysisStage('ai');
       const result = await analyzeChartWithGroq({
         apiKey,
-        image,
+        image: analysisImage,
         minConfidence,
-        preflight,
+        preflight: analysisPreflight,
         contextImages: extraImages,
       });
       setSignal(result.signal);
@@ -185,18 +306,23 @@ function App() {
     } catch (err) {
       setError(humanizeGroqError(err));
     } finally {
+      setPreflightLoading(false);
       setAnalyzing(false);
+      setAnalysisStage('idle');
     }
   };
 
   const reset = () => {
+    stopCurrentLiveTab();
     setImage(null);
+    setPrimarySource('upload');
     setContextImages({ M5: null, H1: null });
     setPreflight(null);
     setPreflightLoading(false);
     setSignal(null);
     setError('');
     setResponseTime(null);
+    setAnalysisStage('idle');
   };
 
   const deleteHistoryItem = (id: string) => setHistory((current) => current.filter((item) => item.id !== id));
@@ -204,39 +330,69 @@ function App() {
     if (window.confirm('Clear all locally saved signal history?')) setHistory([]);
   };
 
-  const canAnalyze = Boolean(apiKey.trim() && preflight && preflight.status !== 'block' && !preflightLoading);
+  const canAnalyze = Boolean(
+    apiKey.trim()
+    && !preflightLoading
+    && (liveTabActive || (preflight && preflight.status !== 'block')),
+  );
+
+  const sourceLabel = liveTabActive
+    ? 'LIVE TAB • FRESH FRAME ON ANALYZE'
+    : primarySource === 'live'
+      ? 'LAST LIVE TAB CAPTURE'
+      : primarySource === 'paste'
+        ? 'PASTED SCREENSHOT'
+        : 'UPLOADED SCREENSHOT';
+
+  const stageText = analysisStage === 'capturing'
+    ? ['Capturing live tab…', 'Taking a fresh frame from the shared chart tab']
+    : analysisStage === 'preflight'
+      ? ['Checking fresh frame…', 'Local quality preflight before the API request']
+      : ['Analyzing evidence…', 'M1 validation • 4 confirmations • context check'];
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white">
-      <Header hasImage={Boolean(image)} onNew={reset} />
+      <Header hasImage={Boolean(image)} onNew={reset} liveTabActive={liveTabActive} />
 
       <main className="max-w-6xl mx-auto px-4 py-6">
         <ApiKeyPanel apiKey={apiKey} onChange={handleApiKeyChange} onClear={handleApiKeyClear} onTest={handleTestConnection} testState={testState} />
 
         {!image ? (
-          <UploadPanel onUpload={handleImageUpload} />
+          <UploadPanel onUpload={handleImageUpload} onStartLiveTab={() => void handleStartLiveTab()} liveTabSupported={liveTabSupported} liveTabBusy={liveTabBusy} />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-4">
               <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-mono">Primary M1 Chart</div>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider font-mono">Primary M1 Chart</div>
+                    <div className={`mt-0.5 text-[9px] font-bold tracking-wider ${liveTabActive ? 'text-green-400' : 'text-slate-600'}`}>{sourceLabel}</div>
+                  </div>
                   {responseTime !== null && <div className="text-xs font-mono text-green-400">⚡ {(responseTime / 1000).toFixed(2)}s</div>}
                 </div>
                 <div className="relative bg-black rounded-lg overflow-hidden">
-                  <img src={image} alt="Uploaded primary chart" className="w-full h-auto max-h-[500px] object-contain" />
+                  <img src={image} alt="Primary chart frame" className="w-full h-auto max-h-[500px] object-contain" />
                   {analyzing && (
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="relative w-20 h-20 mx-auto mb-3"><div className="absolute inset-0 border-4 border-green-400/30 rounded-full" /><div className="absolute inset-0 border-4 border-green-400 border-t-transparent rounded-full animate-spin" /><div className="absolute inset-0 flex items-center justify-center text-2xl">🎯</div></div>
-                        <p className="font-bold text-lg">Analyzing evidence…</p>
-                        <p className="text-xs text-slate-400 mt-1 font-mono">M1 validation • 4 confirmations • context check</p>
+                      <div className="text-center px-4">
+                        <div className="relative w-20 h-20 mx-auto mb-3"><div className="absolute inset-0 border-4 border-green-400/30 rounded-full" /><div className="absolute inset-0 border-4 border-green-400 border-t-transparent rounded-full animate-spin" /><div className="absolute inset-0 flex items-center justify-center text-2xl">{analysisStage === 'capturing' ? '📸' : '🎯'}</div></div>
+                        <p className="font-bold text-lg">{stageText[0]}</p>
+                        <p className="text-xs text-slate-400 mt-1 font-mono">{stageText[1]}</p>
                       </div>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-3 space-y-3">
+                  <LiveTabPanel
+                    info={liveTabInfo}
+                    active={liveTabActive}
+                    busy={liveTabBusy || analyzing}
+                    onCapturePreview={() => void handleRefreshLivePreview()}
+                    onChangeTab={() => void handleStartLiveTab()}
+                    onStop={handleStopLiveTab}
+                  />
+
                   <ImagePreflightPanel result={preflight} loading={preflightLoading} />
 
                   {!analyzing && !signal && (
@@ -249,7 +405,10 @@ function App() {
                         <p className="text-[10px] text-slate-500 mt-1">A direction also needs ≥3/4 independent confirmations. Confidence alone cannot pass the Phase 3 gate.</p>
                       </div>
 
-                      <button onClick={() => void analyzeChart()} disabled={!canAnalyze} className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 disabled:from-slate-700 disabled:to-slate-800 text-white font-black rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed text-lg shadow-lg shadow-green-500/20">🧠 RUN PHASE 3 ANALYSIS</button>
+                      <button onClick={() => void analyzeChart()} disabled={!canAnalyze} className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 disabled:from-slate-700 disabled:to-slate-800 text-white font-black rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed text-lg shadow-lg shadow-green-500/20">
+                        {liveTabActive ? '📸 CAPTURE LIVE FRAME + ANALYZE' : '🧠 RUN PHASE 3 ANALYSIS'}
+                      </button>
+                      {liveTabActive && <p className="text-center text-[10px] text-slate-500">The preview can be old. Clicking Analyze always captures a new live frame first.</p>}
                     </>
                   )}
                 </div>
@@ -270,7 +429,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3 • Local image preflight • Independent evidence checks • Optional M5/H1 context • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.1 • Live browser-tab capture • Fresh frame on Analyze • Local preflight • Educational analysis only</div></footer>
     </div>
   );
 }
