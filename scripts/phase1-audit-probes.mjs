@@ -172,7 +172,7 @@ findings.push({
     && /readJson\(req, ANALYZE_MAX_BODY_BYTES\)/.test(files.server)
     && /decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES/.test(files.server)
     ? 'PASS'
-    : 'CONFIRMED_MISMATCH',
+    : 'CONFIRMED_FAIL',
   evidence: 'Analyze body and decoded native-frame byte limits are independently enforced server-side.',
 });
 
@@ -194,7 +194,7 @@ findings.push({
     && /await fs\.appendFile/.test(files.serverSecurity)
     && /appendSerializedHashedRecord/.test(files.server)
     ? 'PASS'
-    : 'CONFIRMED_RACE_RISK',
+    : 'CONFIRMED_FAIL',
   evidence: 'Batch 1 serializes each hash-chained file through a single per-file promise queue; runtime integration must agree with this source probe.',
 });
 
@@ -365,7 +365,7 @@ findings.push({
     && /uniqueField: 'recordId'/.test(files.server)
     && /INVALID_AUDIT_RECORD_SCHEMA/.test(files.serverSecurity)
     ? 'PASS'
-    : 'CONFIRMED_WEAK',
+    : 'CONFIRMED_FAIL',
   evidence: 'Batch 1 validates the decision-record envelope and artifact envelope server-side and enforces unique recordId.',
 });
 
