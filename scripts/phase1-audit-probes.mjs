@@ -13,6 +13,7 @@ const files = {
   outcome: fs.readFileSync('src/services/outcomeResolver.ts','utf8'),
   precision: fs.readFileSync('src/services/precisionOptimizer.ts','utf8'),
   tabCapture: fs.readFileSync('src/services/tabCapture.ts','utf8'),
+  outcomeResolverSource: fs.readFileSync('src/services/outcomeResolver.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -245,4 +246,48 @@ findings.push({
   evidence: 'isLiveTabStreamActive checks readyState/enabled but not track.muted; a live-but-muted/frozen source is not specifically classified before frame capture.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v3', findings }, null, 2));
+
+findings.push({
+  id:'CLOCK-STALENESS-COMPARES-POST-OCR-TIME',
+  status: /const ocr = await ocrCrop\(crop, 'clock'\);[\s\S]*?const server = await serverUtcNow\(\)/.test(files.stage3c)
+    && !/verifyPlatformClock\([^)]*capturedAt/.test(files.stage3c)
+    ? 'CONFIRMED_TIMING_BIAS'
+    : 'UNVERIFIED',
+  evidence: 'The clock text belongs to the captured frame, but server time is fetched only after OCR. The verifier is not passed capturedAt, so OCR/network processing delay is included in serverDeltaSeconds and can cause a valid frame to be marked CLOCK_STALE near the 5s boundary.',
+});
+
+findings.push({
+  id:'OUTCOME-ENTRY-REFERENCE-NOT-CONTRACT-TARGET',
+  status: /const \[price, expiry\] = await Promise\.all\(\[[\s\S]*?readCurrentPrice/.test(files.outcomeResolverSource)
+    && !/contract.*target|target.*price/i.test(files.outcomeResolverSource)
+    ? 'CONFIRMED_METHOD_MISMATCH'
+    : 'UNVERIFIED',
+  evidence: 'The documented Quotex settlement reference is the contract purchase/target price, but the screen resolver records a chart current-price tag after the user manually places/records a reference. It does not read the actual contract target price.',
+});
+
+findings.push({
+  id:'OUTCOME-DUEAT-ASSUMES-CAPTURE-EQUALS-TRADE-ENTRY',
+  status: /Date\.parse\(entry\.capturedAt\) \+ \(REQUIRED_EXPIRY_SECONDS \* 1000\)/.test(files.outcomeResolverSource)
+    ? 'CONFIRMED_ASSUMPTION'
+    : 'UNVERIFIED',
+  evidence: 'Resolver expiry capture is scheduled at entry.capturedAt + 60s, not from a platform-reported contract expiration timestamp. Manual trade placement and resolver capture are not proven simultaneous.',
+});
+
+findings.push({
+  id:'EXPIRY-AMBIGUITY-ONE-60S-CANDIDATE-PASSES',
+  status: /const oneMinute = candidates\.filter[\s\S]*?if \(oneMinute\.length === 1\) \{[\s\S]*?verifiedOneMinute: true/.test(files.outcomeResolverSource)
+    ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
+    : 'UNVERIFIED',
+  evidence: 'readExpiryDuration accepts exactly one 60-second token even when other conflicting duration tokens are also present. An ambiguous trade-field crop can therefore be marked verifiedOneMinute=true.',
+});
+
+findings.push({
+  id:'AUDIT-RECORD-SERVER-SCHEMA',
+  status: /if \(!recordId\)/.test(files.server)
+    && /return appendHashedRecord\(RECORDS_FILE, \{[\s\S]*?\.\.\.payload\.record/.test(files.server)
+    ? 'CONFIRMED_WEAK'
+    : 'UNVERIFIED',
+  evidence: 'POST /api/audit/records requires only recordId plus artifacts[]. The remaining audit record is caller-supplied and is not server-validated against the frozen decision schema/provenance.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v4', findings }, null, 2));
