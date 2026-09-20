@@ -1,7 +1,7 @@
 import { createServer, get as httpGet } from 'node:http';
 import { promises as fs } from 'node:fs';
 import { createReadStream } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -18,6 +18,7 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const AUDIT_AUTH_TOKEN = String(process.env.AUDIT_AUTH_TOKEN || '');
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || '');
+const TESSERACT_AVAILABLE = spawnSync('tesseract', ['--version'], { stdio: 'ignore' }).status === 0;
 
 await fs.mkdir(IMAGES_DIR, { recursive: true });
 
@@ -308,7 +309,7 @@ const server = createServer(async (req, res) => {
         durableAudit: true,
         authConfigured: Boolean(AUDIT_AUTH_TOKEN),
         groqConfigured: Boolean(GROQ_API_KEY),
-        ocrConfigured: true,
+        ocrConfigured: TESSERACT_AVAILABLE,
         auditLock: true,
       });
     }
@@ -347,6 +348,7 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/ocr') {
+        if (!TESSERACT_AVAILABLE) return sendJson(res, 503, { ok: false, error: 'OCR_ENGINE_NOT_AVAILABLE' });
         const body = await readJson(req);
         const decoded = decodeDataUrl(body.imageDataUrl);
         if (!decoded.mimeType.startsWith('image/')) throw Object.assign(new Error('OCR requires an image.'), { statusCode: 400 });
@@ -390,4 +392,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`audit storage: ${DATA_ROOT}`);
   console.log(`audit auth configured: ${Boolean(AUDIT_AUTH_TOKEN)}`);
   console.log(`server-side Groq configured: ${Boolean(GROQ_API_KEY)}`);
+  console.log(`tesseract available: ${TESSERACT_AVAILABLE}`);
 });
