@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 
 export const GROQ_FIXED_MODEL = 'qwen/qwen3.8-27b';
+export const GROQ_FIXED_PROMPT_VERSION = 'vision-signal-v5.0.0-server-fixed';
 export const GROQ_FIXED_TEMPERATURE = 0;
 export const GROQ_FIXED_SEED = 424242;
 export const GROQ_FIXED_MAX_TOKENS = 850;
@@ -147,10 +148,10 @@ export function validateDecisionRecord(record) {
     record.schemaVersion === 'decision-record-v1'
     && typeof record.recordId === 'string' && record.recordId.length >= 8 && record.recordId.length <= 200
     && typeof record.configVersion === 'string' && record.configVersion.length > 0
-    && typeof record.promptVersion === 'string' && record.promptVersion.length > 0
-    && typeof record.modelName === 'string' && record.modelName.length > 0
-    && Number.isFinite(record.temperature)
-    && (record.seed === null || Number.isInteger(record.seed))
+    && record.promptVersion === GROQ_FIXED_PROMPT_VERSION
+    && record.modelName === GROQ_FIXED_MODEL
+    && record.temperature === GROQ_FIXED_TEMPERATURE
+    && record.seed === GROQ_FIXED_SEED
     && nullableString(record.seedReason)
     && nullableString(record.systemFingerprint)
     && (record.capturedAt === null || isIso(record.capturedAt))
