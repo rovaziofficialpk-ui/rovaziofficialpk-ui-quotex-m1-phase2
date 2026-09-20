@@ -488,4 +488,14 @@ findings.push({
   evidence: 'loadHistory validates only that id is a string and does not force persisted bias through the audit edge gate. HistoryPanel renders item.bias directly, so a legacy/tampered CALL/PUT record remains user-visible while AUDIT LOCK is on.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v13', findings }, null, 2));
+
+findings.push({
+  id:'R4-BACKTEST-EXPORT-LACKS-RUN-PROVENANCE',
+  status: /JSON\.stringify\(\{ exportedAt: new Date\(\)\.toISOString\(\), summary, rows \}/.test(files.backtestService)
+    && !/configVersion|promptVersion|modelName|minConfidence|datasetHash/.test((files.backtestService.match(/export function exportBacktestJson[\s\S]*?\n\}/)||[''])[0])
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'Backtest JSON export contains exportedAt, summary and rows only. It omits config/spec version, model/prompt version, minConfidence, source dataset hash and other run parameters required for exact replay.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v14', findings }, null, 2));
