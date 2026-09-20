@@ -13,7 +13,8 @@ export interface CapturedLiveFrame {
   outputHeight: number;
 }
 
-const MAX_CAPTURE_WIDTH = 2048;
+const PREFERRED_CAPTURE_WIDTH = 2560;
+const PREFERRED_CAPTURE_HEIGHT = 1440;
 
 export function isLiveTabCaptureSupported(): boolean {
   return typeof window !== 'undefined'
@@ -32,6 +33,8 @@ export async function requestLiveTabShare(): Promise<MediaStream> {
   return navigator.mediaDevices.getDisplayMedia({
     video: {
       frameRate: { ideal: 5, max: 10 },
+      width: { ideal: PREFERRED_CAPTURE_WIDTH },
+      height: { ideal: PREFERRED_CAPTURE_HEIGHT },
     },
     audio: false,
   });
@@ -114,17 +117,17 @@ export async function captureLiveTabFrameDetailed(stream: MediaStream): Promise<
       throw new Error('The shared tab has no capturable frame yet. Try again in a moment.');
     }
 
-    const scale = Math.min(1, MAX_CAPTURE_WIDTH / sourceWidth);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
 
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Browser screenshot capture is unavailable.');
 
+    context.imageSmoothingEnabled = false;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const capturedAt = new Date().toISOString();
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
+    const dataUrl = canvas.toDataURL('image/png');
     return {
       dataUrl,
       capturedAt,

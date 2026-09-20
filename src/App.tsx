@@ -1009,7 +1009,7 @@ function App() {
     <div className="min-h-screen bg-[#0a0e1a] text-white">
       <Header hasImage={Boolean(image)} onNew={reset} liveTabActive={liveTabActive} />
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-[1480px] px-4 py-5">
         <SecurityPanel
           authenticated={authVerified}
           authConfigured={Boolean(serverHealth?.authConfigured)}
@@ -1040,7 +1040,7 @@ function App() {
               <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-3 items-start">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-3 items-start">
               <section className="min-w-0 rounded-xl border border-slate-800 bg-slate-900/40 p-2">
                 <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
                   <div className="min-w-0">
@@ -1057,10 +1057,10 @@ function App() {
                   {liveTabActive && liveStreamRef.current ? (
                     <LiveStreamPreview
                       stream={liveStreamRef.current}
-                      className="h-[56vh] min-h-[340px] max-h-[620px] w-full object-contain"
+                      className="h-[64vh] min-h-[440px] max-h-[760px] w-full object-contain"
                     />
                   ) : (
-                    <img src={image} alt="Primary chart frame" className="h-[56vh] min-h-[340px] max-h-[620px] w-full object-contain" />
+                    <img src={image} alt="Primary chart frame" className="h-[64vh] min-h-[440px] max-h-[760px] w-full object-contain" />
                   )}
 
                   {analyzing && (
@@ -1213,7 +1213,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.6 • Stage 3C chart/axis/clock/payout verifier • acceptance lock ON • AUDIT LOCK ON</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="mx-auto max-w-[1480px] px-4 text-center text-[10px] text-slate-600">Phase 4A.6 • Stage 3C chart/axis/clock/payout verifier • acceptance lock ON • AUDIT LOCK ON</div></footer>
     </div>
   );
 }
