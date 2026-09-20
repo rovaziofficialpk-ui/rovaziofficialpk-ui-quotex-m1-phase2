@@ -11,7 +11,7 @@ import type {
   ScreenReasonCode,
 } from './screenPipeline';
 
-export const STAGE3C_VERIFIER_VERSION = 'stage3c-v1.0.0';
+export const STAGE3C_VERIFIER_VERSION = 'stage3c-v1.1.0';
 export const CHARTTYPE_CANDLE_TEMPLATE_VERSION = 'quotex-candlestick-v1';
 export const CHARTTYPE_CANDLE_THRESHOLD = 0.92;
 export const PRICE_AXIS_MIN_LABELS = 5;
