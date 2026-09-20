@@ -479,3 +479,27 @@ test('resolver dueAt is derived from resolver capture timestamp plus 60 seconds'
   const event = outcomeResolver.makeArmedEvent('CALL', entry);
   assert.equal(event.payload.dueAt, '2026-09-20T00:01:00.000Z');
 });
+
+
+test('source counterexample: outcome snapshot does not require structural deterministic safeForAi', () => {
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const start = app.indexOf('const captureOutcomeResolverSnapshot');
+  const end = app.indexOf('const executeAiAnalysis', start);
+  assert.ok(start >= 0 && end > start);
+  const fn = app.slice(start, end);
+  assert.match(fn, /const deterministic = await inspectAndCropSingleFrame/);
+  assert.match(fn, /verifyStage3CFrame\(\{/);
+  assert.match(fn, /return buildResolverSnapshot\(/);
+  assert.doesNotMatch(fn, /if\s*\(\s*!?deterministic\.safeForAi/);
+});
+
+test('source counterexample: minConfidence threshold changes without a spec/config bump', () => {
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const start = app.indexOf('const handleMinConfidenceChange');
+  const end = app.indexOf('const handleAutoIntervalChange', start);
+  assert.ok(start >= 0 && end > start);
+  const fn = app.slice(start, end);
+  assert.match(fn, /logSettingChange\('minConfidence', minConfidence, value, INPUT_PIPELINE_CONFIG_VERSION\)/);
+  assert.match(fn, /setMinConfidence\(value\)/);
+  assert.doesNotMatch(fn, /spec|bump|invalidate/i);
+});
