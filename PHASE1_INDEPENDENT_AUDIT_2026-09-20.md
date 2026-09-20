@@ -22,27 +22,30 @@ No production file was changed during this audit. All additions are isolated on 
 The normal live-analysis UI path is fail-closed and the final live signal is forced to NEUTRAL by the audit lock. However, the whole application does **not** yet satisfy the requested R1-R9 end state.
 
 Critical blockers:
-1. **R2 fails:** authenticated callers can POST arbitrary payloads directly to `/api/groq/analyze`; the server proxy does not independently verify deterministic gates or source-frame provenance before forwarding to Groq. Backtest also sends generated chart images to the model outside the deterministic live-screen gate.
-2. **R1 fails globally:** Backtest Lab displays directional CALL/PUT values from `result.signal` without applying `applyAuditEdgeGate`.
-3. **R4 fails:** `/api/audit/replay` is not a replay. It hard-codes `replayedFinalBias = 'NEUTRAL'` and compares that constant with the stored final bias.
-4. Real negative controls are missing for non-M1 and non-candlestick chart types, so R3 is unproven.
-5. Preflight-blocked frames can be returned/skipped without a durable decision record; Auto Test can clear the detailed deterministic error.
-6. Payout can be `PAYOUT_UNREADABLE` without becoming a deterministic frame failure, despite the audit target treating payout as E7.
-7. Client-side model validation coerces/clamps invalid confidence values rather than strictly rejecting them.
+1. **R2 fails:** authenticated callers can POST arbitrary payloads directly to `/api/groq/analyze`; the real server forwards caller-selected model/image/temperature without deterministic proof.
+2. **R1 fails globally:** Backtest Lab displays directional CALL/PUT without `applyAuditEdgeGate`; persisted legacy/tampered history can also surface CALL/PUT while AUDIT LOCK is shown.
+3. **R4 fails:** both server and CLI replay are constant-NEUTRAL comparisons, and exact native source bytes are not retained for every decision.
+4. **Audit integrity fails under concurrency:** a 120-write runtime probe produced 119 broken adjacent hash-chain links; forged and duplicate decision records were accepted with HTTP 201.
+5. **Stage 11 outcome validation has fail-open paths:** structural gate result is not required by the snapshot helper, asset/frame-reason mismatches are ignored by `resolveOutcome`, expiry ambiguity can pass, and the resolver does not observe the actual contract target/expiry reference.
+6. Real negative controls are missing for non-M1 and non-candlestick chart types, so R3 is unproven.
+7. Backtest has independent fail-open/data-integrity defects: unknown timeframe is allowed, missing timestamps are synthesized at 60-second spacing, standard ISO fractional timestamps are corrupted, and mixed intervals can be labeled M1 by median alone.
+8. Runtime `minConfidence` is a decision threshold that can change without a spec/config bump, violating the audit hygiene rule.
+9. Preflight/similarity/cooldown skips can disappear from the durable decision audit; Auto Test can clear detailed reject errors.
+10. Client-side model validation coerces/clamps/repairs values rather than strictly rejecting schema violations.
 
 ## Target results R1-R9
 
 | Result | Status | Evidence |
 |---|---|---|
-| R1 no user-visible CALL/PUT with lock on | **REFUTED** | Live SignalCard path is gate-locked and forced CALL/PUT tests become NEUTRAL, but Backtest Lab displays raw directional `result.signal.bias` without audit edge gate. |
+| R1 no user-visible CALL/PUT with lock on | **REFUTED** | Live SignalCard path is gate-locked, but Backtest renders raw directional bias and a direct test proves a coherent CALL remains `row.bias=CALL`; local persisted history also accepts/renders a CALL without audit-lock sanitization. |
 | R2 no image to model unless all deterministic checks pass | **REFUTED** | Server `/api/groq/analyze` only checks audit authentication, reads arbitrary JSON, then invokes `proxyGroq(payload)`. It does not independently verify gate evidence. Backtest also makes image model calls outside the live deterministic gate. |
 | R3 valid passes + every invalid rejects, measured per condition | **UNVERIFIED** | Calibration evidence exists, but required real 5s/15s/30s/5m/15m and line/bars/Heikin-Ashi frames are not supplied. |
-| R4 reproducible replay | **REFUTED** | Replay endpoint uses constant NEUTRAL instead of rerunning deterministic checks/model/gates. |
-| R5 unknowns stay null + reason | **PARTIAL / REFUTED as whole** | Outcome resolver and most structured readers fail closed, but preflight blocks can disappear without a decision record and payout is not included in deterministic failure reasons. |
-| R6 no secrets in bundle/logs/repo/stored files | **PARTIAL / UNVERIFIED as whole** | Key-shaped bundle scan passed; Groq key is server env; no key value was exposed in inspected logs/repo. Full stored audit-file secret scan was not possible, so whole claim remains unproven. |
+| R4 reproducible replay | **REFUTED** | Server and CLI replay hard-code NEUTRAL. Exact native full-frame bytes are retained only for timeframe rejects; other decisions keep transformed/masked JPEG/crops, so all original structural metrics cannot be recomputed byte-for-byte. |
+| R5 unknowns stay null + reason | **REFUTED** | Structured OCR readers often fail closed, but model text is repaired into fallback strings, signal audit logs use `Unknown Asset`/`Unknown feed`, and Backtest synthesizes 60-second timestamps then allows `timeframeStatus='unknown'` to proceed. |
+| R6 no secrets in bundle/logs/repo/stored files | **PARTIAL / UNVERIFIED as whole** | Key-shaped client-bundle scan, inspected Railway logs, and full Git-history key-pattern scan passed. Groq key remains server-side. Complete scanning of persistent `/data/audit` contents is still unavailable, so the whole claim remains unproven. |
 | R7 all stats/formulas correct | **CONFIRMED for the explicitly requested core formulas; broader UI statistics remain PARTIAL** | Independent production-module vectors verify breakeven, Wilson 95% lower bound, decided-only win-rate denominator, tie handling, known-return mean, full-sample expectancy null policy, agreement rate, null rate and coverage. No claim is made for statistics outside the audited set. |
 | R8 every UI error says what/why | **REFUTED** | Timeframe diagnostics are detailed, but Auto Test clears deterministic error text and preflight/track-ended/frozen paths do not all emit durable specific reason codes. |
-| R9 docs/UI match code | **REFUTED** | README still claims browser-local BYOK/localStorage Groq key and older phase state, while current code uses server-side Groq proxy and sessionStorage audit auth. |
+| R9 docs/UI match code | **REFUTED** | Multiple stale claims were confirmed: browser-local BYOK, optional M5/H1 decision uploads, future Phase-5 proxy, raw-source-not-persisted, missing Railway Groq key, Backtest “same Phase 3 gates”, optimizer live-validation wording, and stale Backtest authentication error text. |
 
 ## A. Current TIMEFRAME_UNVERIFIED
 
@@ -97,11 +100,12 @@ Fresh audit CI on Node 24:
 - repository has no tracked `package-lock.json`
 - `npm install`: succeeded
 - baseline tests: 57/57 passed
-- Phase 1 direct production-module tests: 18/18 passed
+- Phase 1 direct production-module tests: 28/28 passed
 - `tsc --noEmit`: passed; tsconfig strict mode is enabled
 - production Vite build: passed
 - linter: **NOT CONFIGURED**
 - client-bundle scan for key-shaped `gsk_...` / `sk-...`: no matches
+- full Git-history scan for `gsk_...`, `sk-proj-...`, and long `qa_...` token patterns: no matches
 
 Build reproducibility:
 - **CONFIRMED** that a fresh install/build succeeded in the audit runner.
@@ -109,13 +113,13 @@ Build reproducibility:
 
 Coverage:
 - Existing suite reported 100% with no production-file rows; that number is not evidence of production coverage.
-- Direct production-module audit coverage: 52.89% lines, 76.56% branches, 53.69% functions across the imported production modules.
+- Direct production-module audit coverage: 62.53% lines, 80.39% branches, 64.09% functions across the imported production modules.
   - edgeGate.ts: 100% lines
-  - outcomeResolver.ts: 42.60% lines
-  - screenFieldVerification.ts: 32.68% lines
-  - screenPipeline.ts: 41.12% lines
-  - signalLogic.ts: 91.03% lines
-  - apiClient.ts: 37.50% lines
+  - outcomeResolver.ts: coverage increased materially in the latest run; exact per-file figure is retained in the CI artifact
+  - screenFieldVerification.ts: exact per-file figure is retained in the CI artifact
+  - screenPipeline.ts: exact per-file figure is retained in the CI artifact
+  - signalLogic.ts: exact per-file figure is retained in the CI artifact
+  - apiClient.ts: exact per-file figure is retained in the CI artifact
 - This is still not whole-app coverage; DOM-heavy App/Backtest/server integration remains under-covered.
 
 Mutation sampling:
@@ -155,6 +159,9 @@ UNVERIFIED / weak:
 - frozen images in Auto Test are treated as similar/skip, not as a durable `FROZEN_FRAME` failure
 - blank/preflight-blocked frames can be returned before a reproducibility decision record is written
 - manual uploaded analysis has no re-entry guard equivalent to `autoCycleBusyRef`; repeated Analyze clicks can overlap
+- `displaySurface` is recorded but not enforced, so window/monitor sharing is accepted by the capture layer
+- target-tab DPR/zoom is not actually measured: `devicePixelRatio` and CSS viewport come from the analyzer app window, while video dimensions come from the shared target
+- `track.muted` is not checked; a live-but-muted/frozen source is not given a specific reason code
 
 ## D. Layout and crops
 
@@ -171,6 +178,16 @@ Evidence scope:
 - historical production frame: 2390x1084 and the structural layout was found
 - two real dimensions therefore exist, but two independent untouched acceptance window/zoom states do not. Acceptance coverage remains incomplete.
 - real overlay/popup rejection controls were not supplied, so overlay rejection is **UNVERIFIED**.
+
+### Exact-replay artifact limitation
+
+The original deterministic computation uses native source pixels. Audit storage does not preserve those bytes for every decision:
+- all decisions create a privacy-masked source JPEG;
+- primary/plot crops are re-encoded as JPEG;
+- small crops are transformed/upscaled PNGs;
+- a full native source PNG is added only when a timeframe rejection occurs.
+
+The original SHA-256 proves identity if the bytes later exist, but a hash cannot reconstruct the missing pixels. Therefore exact deterministic replay from stored artifacts is **REFUTED** for general decisions.
 
 ## E. Deterministic checks
 
@@ -219,7 +236,7 @@ Backtest builds rows from raw model `result.signal`, then renders `row.bias`; it
 Server replay hard-codes NEUTRAL; it is a stored-output comparison, not a replay.
 
 ### HIGH — append-only audit hash-chain is not concurrency-safe
-A local integration probe sent 120 concurrent valid outcome-event writes to the real server implementation. All 120 returned 201, but **119 adjacent hash-chain links were broken**. The implementation reads the current last hash and appends in separate asynchronous steps without serialization, allowing concurrent records to share the same predecessor. This directly undermines the claimed linear append-only chain under concurrent requests.
+A local integration probe sent 120 concurrent valid outcome-event writes to the real server implementation. All 120 returned 201. In the latest complete evidence run **119 adjacent hash-chain links were broken** (earlier runs produced similarly catastrophic but not identical counts, as expected for a race). The implementation reads the current last hash and appends in separate asynchronous steps without serialization, allowing concurrent records to share the same predecessor. This directly undermines the claimed linear append-only chain under concurrent requests.
 
 ### HIGH — preflight frames can vanish from decision audit
 Manual/Auto Test preflight blocks can stop before the normal reproducibility record is written. Auto Test also makes a blocked frame the similarity baseline.
@@ -253,6 +270,26 @@ Fail-closed examples that were inspected:
 - unknown chart type fails closed
 - missing asset/configuration fails closed in live deterministic path
 - outcome missing prices/expiry/payout stays null
+
+### HIGH — Backtest allows unknown timeframe and synthesizes M1 spacing
+Direct production-module tests confirmed:
+- an OHLC CSV with no real timestamps is returned as `timeframeStatus='unknown'`;
+- the parser still assigns synthetic timestamps spaced exactly 60,000 ms apart;
+- Backtest run rejects only `not_m1`, not `unknown`, so this dataset can proceed to AI replay.
+
+This is a direct violation of the "unknown stays unknown; nothing guessed into a pass" audit target.
+
+### HIGH — standard ISO fractional timestamps are corrupted
+`parseTimestamp` executes `Date.parse(trimmed.replace(/\./g, '-'))`. A normal ISO timestamp such as `2026-09-20T00:00:00.000Z` therefore has its fractional-second dot replaced and becomes invalid. A direct 70-row production test confirmed the whole dataset falls to `hasRealTimestamps=false` / `timeframeStatus='unknown'`.
+
+### MEDIUM — Backtest M1 classification is median-only
+A direct production test supplied a timestamp series containing repeated 30-second and 120-second gaps while the median interval remained 60 seconds. The parser still classified the dataset as `m1`. It has no per-row M1 conformance requirement or maximum invalid-interval fraction.
+
+### MEDIUM — Backtest OHLC invariants are incomplete
+A direct test supplied rows where `open > high`. The parser accepted all rows because it checks finite OHLC and `high >= low`, but not that open/close lie inside [low, high].
+
+### MEDIUM — Backtest exports cannot reproduce a run
+JSON export contains `exportedAt`, summary and rows, but not the config/spec version, model/prompt version, runtime minConfidence, dataset hash, or other run parameters. The historical replay is therefore not self-reproducing.
 
 ## G. AI layer
 
@@ -336,6 +373,8 @@ CONFIRMED for examined code/build:
 - audit token is stored in sessionStorage, not localStorage
 - production logs inspected expose only boolean configuration state, not key contents
 - key-shaped client bundle scan found no matches
+- full Git-history key-pattern scan found no matches
+- the latest inspected Railway deploy/HTTP log window contained no `gsk_`, `sk-proj-`, long `qa_` token, or literal env-assignment pattern match
 
 UNVERIFIED:
 - complete secret scan of every persistent `/data/audit` file could not be performed with current read-only tooling quota
@@ -354,17 +393,18 @@ Audit branch: `audit/phase1-e2e-20260920`
 PR: #1, deliberately not merged.
 
 Latest complete audit workflow evidence:
-- workflow conclusion: SUCCESS on audit branch head `f9d9738b61322b4474b1e3f6b3d519b4f3fff3ec`
+- workflow conclusion: SUCCESS on audit branch head `74e61dc2cbf1cc9457ee9d55325ac151ee981e91` (latest fully completed evidence before this report-only update)
 - baseline 57/57 pass
-- direct production-runtime audit tests 18/18 pass
+- direct production-runtime audit tests 28/28 pass
 - strict TypeScript pass
 - production build pass
 - mutation sample 26/26 detected, 0 sampled mutants undetected
 - local server integration probe passed and confirmed the R2 outbound bypass, weak outcome schema, fake replay and concurrent hash-chain break
 - key-shaped client bundle scan pass
+- full Git-history key-pattern scan pass
 - linter not configured
 - lockfile missing from repository
-- production-module coverage 52.89% lines / 76.56% branches / 53.69% functions for imported modules
+- production-module coverage 62.53% lines / 80.39% branches / 64.09% functions for imported modules
 
 
 ## Additional Phase 1 findings confirmed after the initial report
@@ -438,32 +478,62 @@ Local server integration verified:
 The critical Groq bypass therefore requires a valid audit token; it is an authorization-boundary/design failure after authentication, not an unauthenticated endpoint exposure.
 
 
+### HIGH — outcome resolver drops structural-gate failures
+A source-level test confirms `captureOutcomeResolverSnapshot` computes `inspectAndCropSingleFrame(...)` but never requires `deterministic.safeForAi` before building the resolver snapshot. The structural result is not merged into the Stage 3C reason list.
+
+A separate behavioral test then created:
+- entry asset EUR/USD with `CLOCK_STALE`,
+- expiry asset GBP/USD with `ASSET_MISMATCH`,
+- readable prices and payout.
+
+`resolveOutcome` still returned **WIN** with no null reason. Thus Stage 11 can resolve an invalid/cross-asset pair of snapshots if the narrow price/expiry/payout fields are readable.
+
+### HIGH — minimum-confidence threshold changes without spec bump
+The live `minConfidence` decision threshold is mutable in the UI. The change is logged with the current `INPUT_PIPELINE_CONFIG_VERSION`, but no new spec/config ID is created and no acceptance session is invalidated.
+
+This violates the audit rule that threshold/rule changes require a spec bump. Current untouched acceptance sessions = **0**, so a future approved correction would affect **0 existing acceptance sessions**, but Phase 1 made no production change.
+
+### MEDIUM — persisted directional history bypasses the display invariant
+A direct test loaded a legacy/tampered local history record with `bias='CALL'`. `loadHistory` accepted it because it validates only a string `id`, and `HistoryPanel` renders `item.bias` directly. This is another user-visible directional path while the page simultaneously shows AUDIT LOCK ON.
+
+### R9 detailed mismatches
+Confirmed stale/misleading claims include:
+- README: browser-local Groq BYOK/localStorage, while current Groq key is server-side;
+- README: optional M5/H1 context screenshots, while current App does not render the context panel and sends `contextImages: []`;
+- README/optimizer wording: generated precision profiles can become validated/live, while current optimizer hard-codes `validated=false` and `payoutValidated=false`;
+- PHASES.md: server proxy/auth is future Phase 5, although it already exists;
+- Stage3B report: raw source screenshot bytes are no longer persisted, while current timeframe-reject diagnostics persist a native full-frame PNG;
+- Stage3C report: Railway Groq key absent, while current runtime reports Groq configured;
+- Backtest UI: "same Phase 3 gates", although it bypasses the live deterministic screen verifier;
+- Backtest auth error: "Add your Groq API key", although the current architecture uses server-side Groq plus audit authentication.
+
 ## Phase 2 priority proposal — no fixes applied yet
 
 P0:
-1. server-side deterministic proof token/envelope required by `/api/groq/analyze`, bound to source hash + config/spec + all required pass results; reject arbitrary proxy payloads
-2. server-validate durable decision records, enforce unique recordId/provenance, and reject forged audit payloads
-3. apply audit edge gate to Backtest user-visible signal, or clearly separate proposed/research direction without calling it final signal
-4. replace fake replay (server and CLI) with actual stored-artifact deterministic replay
-5. serialize/atomically queue hash-chained audit writes and test concurrent chain integrity
-6. correct Stage 11 reference capture so validation is bound to the actual contract target/entry and actual platform expiry reference; do not assume resolver-button capture equals trade entry
+1. require a server-issued deterministic-proof envelope for `/api/groq/analyze`, cryptographically bound to source hash + frozen spec/config + every required PASS result; reject arbitrary authenticated payloads
+2. server-validate durable decision records, enforce unique `recordId`, provenance and schema, and reject forged audit payloads
+3. serialize/atomically queue hash-chained writes and re-test concurrent linearity
+4. eliminate every user-visible directional path under audit lock: Backtest output and unsanitized persisted history
+5. replace server and CLI constant-NEUTRAL "replay" with actual deterministic replay, and retain sufficient exact native inputs for it
+6. repair Stage 11 validation so entry is the real contract target/purchase reference, expiry is the actual platform contract expiry, structural/asset/clock failures invalidate resolution, and ambiguous duration cannot pass
 
 P1:
-7. write a durable NEUTRAL/skip decision record for every preflight, similarity and cooldown branch
-8. stop Auto Test from clearing the actual reject/audit-storage reason
-9. add manual Analyze re-entry guard
-10. decide/spec whether payout is truly required before AI; if yes, add it to deterministic reasons (spec change)
-11. strict client model schema: reject wrong types, extra properties and out-of-range values rather than coerce/clamp/repair
-12. server-side schema for outcome/settings events and frozen model/prompt/schema
-13. fix capture-surface classification, target-DPR diagnostics, muted/frozen-frame detection and specific reason codes
-14. compare platform clock against capture-time-aligned server time rather than post-OCR time (spec/rule change)
-15. make expiry parsing fail on conflicting duration candidates
+7. write durable NEUTRAL/SKIP records for preflight, similarity and cooldown branches
+8. stop Auto Test from clearing the actual deterministic/audit-storage failure reason
+9. add a manual Analyze re-entry guard
+10. freeze or version every decision threshold, including `minConfidence`; any approved threshold/rule change gets a new spec ID. Current acceptance sessions affected: **0**
+11. make client model validation truly strict: reject wrong types, extra properties, out-of-range values and empty-required fields instead of coercing/clamping/repairing
+12. freeze model/prompt/schema/temperature server-side; add server upstream timeout, rate-limit/backoff policy, and request-size/image-count enforcement
+13. fail closed on Backtest `timeframeStatus='unknown'`; stop synthesizing timestamps as evidentiary time; validate OHLC invariants and interval consistency; add complete run provenance to exports
+14. fix capture-surface classification, target-DPR metadata, muted/frozen-frame detection and specific reason codes
+15. compare platform clock to capture-time-aligned server time rather than post-OCR time (rule/spec change)
+16. decide/spec whether payout is required for AI eligibility. If yes, adding it to deterministic reasons is a rule/spec change with **0 current acceptance sessions affected**
 
 P2:
-10. lockfile + real linter
-11. real negative-control corpus: 5s/15s/30s/5m/15m, line/bars/Heikin-Ashi, overlays, two+ untouched window/zoom states
-12. long-run browser memory and capture-abnormal-state tests
-13. independent Wilson/expectancy reference-vector suite
-14. update README/UI claims
+17. add and enforce a lockfile plus a real linter
+18. build the real negative-control corpus: 5s/15s/30s/5m/15m, line/bars/Heikin-Ashi, overlays/popups, and at least two untouched window/zoom states
+19. run real-browser minimized/closed/resized/revoked/muted/frozen capture tests plus a long-run heap/leak test
+20. finish complete stored-audit-file secret scanning and retention/privacy review
+21. update README, PHASES, Stage reports and stale UI error/help text to match current code
 
-Any P1 item that changes a threshold, template, layout or decision rule must bump the spec and invalidate/count acceptance sessions according to the stated hygiene rule. At this audit baseline the untouched acceptance-session count is zero.
+Any approved Phase 2 change to a threshold, template, layout or rule must bump the spec ID and state acceptance impact. At this Phase 1 baseline there are **0 untouched acceptance sessions**, and AUDIT LOCK / LAYOUT_VALIDATION_INCOMPLETE remain ON.
