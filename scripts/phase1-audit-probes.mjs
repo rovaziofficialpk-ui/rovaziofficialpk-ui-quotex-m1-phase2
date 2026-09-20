@@ -19,6 +19,8 @@ const files = {
   stage3bReport: fs.readFileSync('STAGE3B_VERIFICATION_REPORT.md','utf8'),
   stage3cReport: fs.readFileSync('STAGE3C_REPORT.md','utf8'),
   auditSignalLogSource: fs.readFileSync('src/services/auditSignalLog.ts','utf8'),
+  auditArtifactsSource: fs.readFileSync('src/services/auditArtifacts.ts','utf8'),
+  screenPipelineSource: fs.readFileSync('src/services/screenPipeline.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -446,4 +448,23 @@ findings.push({
   evidence: "The signal audit schema substitutes human strings such as 'Unknown Asset'/'Unknown feed' rather than keeping unavailable fields null with a reason code.",
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v9', findings }, null, 2));
+
+findings.push({
+  id:'R4-NATIVE-SOURCE-NOT-RETAINED-FOR-ALL-DECISIONS',
+  status: /const sourceArtifact = await buildPrivacyMaskedSourceArtifact/.test(files.app)
+    && /if \(timeframeRejected && analysisImage\.startsWith\('data:image\/png'\)\)[\s\S]*?buildFullFrameArtifact\('native_source_frame_png'/.test(files.app)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'Exact native full-frame PNG bytes are retained only for timeframe rejects. Other rejects and successful decisions retain a privacy-masked JPEG plus derived crops and the original source hash, so the exact original frame needed to recompute all structural metrics is unavailable.',
+});
+
+findings.push({
+  id:'R4-DERIVED-CROPS-ARE-REENCODED',
+  status: /canvas\.toDataURL\(small \? 'image\/png' : 'image\/jpeg'/.test(files.screenPipelineSource)
+    && /canvas\.toDataURL\('image\/jpeg', 0\.92\)/.test(files.auditArtifactsSource)
+    ? 'CONFIRMED_REPLAY_LIMITATION'
+    : 'UNVERIFIED',
+  evidence: 'Audit source/crops are transformed: primary/plot crops use JPEG and the source artifact is privacy-masked JPEG. Their bytes are not identical to source pixels used for the original deterministic computation.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v10', findings }, null, 2));
