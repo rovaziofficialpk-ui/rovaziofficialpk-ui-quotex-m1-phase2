@@ -503,3 +503,40 @@ test('source counterexample: minConfidence threshold changes without a spec/conf
   assert.match(fn, /setMinConfidence\(value\)/);
   assert.doesNotMatch(fn, /spec|bump|invalidate/i);
 });
+
+
+test('backtest unknown timestamps are synthesized as M1-spaced and remain timeframe unknown', () => {
+  const rows = ['open,high,low,close'];
+  for (let i = 0; i < 70; i += 1) rows.push(`1,${1.1 + i/10000},0.9,1.0`);
+  const parsed = backtest.parseBacktestCsv(rows.join('\n'));
+  assert.equal(parsed.hasRealTimestamps, false);
+  assert.equal(parsed.timeframeStatus, 'unknown');
+  assert.equal(parsed.medianIntervalSeconds, null);
+  assert.equal(parsed.candles[1].timestamp - parsed.candles[0].timestamp, 60_000);
+});
+
+test('backtest CSV parser accepts OHLC rows with open outside high-low range', () => {
+  const rows = ['timestamp,open,high,low,close'];
+  const start = Date.parse('2026-09-20T00:00:00Z');
+  for (let i = 0; i < 70; i += 1) {
+    rows.push(`${new Date(start+i*60000).toISOString()},2.0,1.5,1.0,1.2`);
+  }
+  const parsed = backtest.parseBacktestCsv(rows.join('\n'));
+  assert.equal(parsed.rejectedRows, 0);
+  assert.equal(parsed.candles.length, 70);
+  assert.equal(parsed.timeframeStatus, 'm1');
+});
+
+test('backtest timeframe classifier can call mixed intervals M1 when median is 60 seconds', () => {
+  const rows = ['timestamp,open,high,low,close'];
+  let t = Date.parse('2026-09-20T00:00:00Z');
+  rows.push(`${new Date(t).toISOString()},1,1.1,0.9,1`);
+  for (let i = 1; i < 70; i += 1) {
+    const step = i % 7 === 0 ? 120_000 : i % 11 === 0 ? 30_000 : 60_000;
+    t += step;
+    rows.push(`${new Date(t).toISOString()},1,1.1,0.9,1`);
+  }
+  const parsed = backtest.parseBacktestCsv(rows.join('\n'));
+  assert.equal(parsed.medianIntervalSeconds, 60);
+  assert.equal(parsed.timeframeStatus, 'm1');
+});
