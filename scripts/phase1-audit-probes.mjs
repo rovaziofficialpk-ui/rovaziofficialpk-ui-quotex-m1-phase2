@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const files = {
   server: fs.readFileSync('server.mjs','utf8'),
