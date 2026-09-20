@@ -25,7 +25,11 @@ function hex(bytes: Uint8Array): string {
 
 export async function sha256DataUrl(dataUrl: string): Promise<{ sha256: string; mimeType: string; byteLength: number }> {
   const decoded = dataUrlBytes(dataUrl);
-  const digest = await crypto.subtle.digest('SHA-256', decoded.bytes);
+  const stableBuffer = decoded.bytes.buffer.slice(
+    decoded.bytes.byteOffset,
+    decoded.bytes.byteOffset + decoded.bytes.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest('SHA-256', stableBuffer);
   return { sha256: hex(new Uint8Array(digest)), mimeType: decoded.mimeType, byteLength: decoded.bytes.byteLength };
 }
 
