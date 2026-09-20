@@ -328,7 +328,7 @@ test('Batch 1 P0: source guards keep timeout, native-frame proof, request limits
   assert.match(server, /if \(!verification\.eligibleForModel\)/);
   assert.match(server, /fixedGroqPayload\(modelImage\)/);
   assert.match(policy, /CLIENT_MODEL_PARAMETERS_FORBIDDEN/);
-  assert.match(policy, /acquireFileLock/);
+  assert.equal((policy.match(/const release = await acquireFileLock\(file\);/g) || []).length, 2);
   assert.match(policy, /DUPLICATE_/);
   assert.match(policy, /RECORD_HASH_MISMATCH/);
   assert.match(gate, /VALIDATION_COVERAGE_COMPLETE = false/);
