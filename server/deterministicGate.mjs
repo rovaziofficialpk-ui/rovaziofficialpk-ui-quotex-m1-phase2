@@ -725,3 +725,12 @@ export async function verifyNativeFrame(args) {
     coverageComplete: VALIDATION_COVERAGE_COMPLETE,
   };
 }
+
+
+export async function buildModelPrimaryDataUrl(imageBytes, rect) {
+  const bytes = await sharp(imageBytes)
+    .extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height })
+    .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
+    .toBuffer();
+  return 'data:image/jpeg;base64,' + bytes.toString('base64');
+}
