@@ -620,4 +620,15 @@ findings.push({
   evidence: "The local IndexedDB copy is inserted with durableWrite='pending' and is never updated to 'ok' after server success or 'failed' after server failure. Local audit metadata therefore cannot state actual durability.",
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v17', findings }, null, 2));
+
+findings.push({
+  id:'PRICE-AXIS-OCCLUSION-DROPPED-NOT-REJECTED',
+  status: /reason: 'OCCLUDED_BY_CURRENT_PRICE_TAG' \}\);[\s\S]*?continue;/.test(files.stage3c)
+    && /const linear = monotonic[\s\S]*?PRICE_AXIS_STEP_CV_MAX;/.test(files.stage3c)
+    && !/const linear =[^;]*!band/.test(files.stage3c)
+    ? 'CONFIRMED_SPEC_VIOLATION'
+    : 'UNVERIFIED',
+  evidence: 'verifyPriceAxis detects a blue current-price occlusion band, drops OCR labels inside that band, and can still mark the axis readable from the remaining labels. The requested E4 contract says occlusion must be rejected, not repaired/excluded.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v18', findings }, null, 2));
