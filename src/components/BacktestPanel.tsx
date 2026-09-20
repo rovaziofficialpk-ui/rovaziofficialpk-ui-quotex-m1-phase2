@@ -147,6 +147,8 @@ export function BacktestPanel({ apiKey, minConfidence, activePrecisionProfile, o
           minConfidence,
           preflight,
           contextImages: [],
+          configuredAsset: displayPair,
+          capturedAt: Number.isFinite(decision.timestamp) ? new Date(decision.timestamp).toISOString() : null,
         });
 
         const row = createBacktestRow({

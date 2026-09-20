@@ -714,10 +714,12 @@ function App() {
     // attached to the decision. The AI receives only the verified primary crop.
     const result = await analyzeChartWithGroq({
       apiKey,
-      image: primaryCrop.dataUrl,
+      image: analysisImage,
       minConfidence,
       preflight: primaryPreflight,
       contextImages: [],
+      configuredAsset,
+      capturedAt: auditMeta.capturedAt,
     });
     const researchFilteredSignal = applyPrecisionProfile(result.signal, precisionProfile);
     const auditGateStartedAt = performance.now();

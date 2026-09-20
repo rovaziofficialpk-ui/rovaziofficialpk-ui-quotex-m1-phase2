@@ -13,11 +13,13 @@
     "audit:replay": "node scripts/replay-audit.mjs",
     "stage3c:validate": "node scripts/stage3c-validation-summary.mjs",
     "stage3d:validate": "node scripts/stage3d-validation-summary.mjs",
-    "stage11:summary": "node scripts/stage11-outcome-summary.mjs"
+    "stage11:summary": "node scripts/stage11-outcome-summary.mjs",
+    "test:batch1": "node --test tests/batch1-p0-regression.test.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.7",

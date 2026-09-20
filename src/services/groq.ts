@@ -1,4 +1,4 @@
-import { SIGNAL_SCHEMA, applySignalGate, validateModelSignal, type TradeSignal } from '../signalLogic';
+import { applySignalGate, validateModelSignal, type TradeSignal } from '../signalLogic';
 import type { ImagePreflightResult } from './imagePreflight';
 import { apiFetch } from './apiClient';
 
@@ -14,35 +14,6 @@ export interface ContextImage {
   image: string;
 }
 
-const SYSTEM_PROMPT = `You analyze trading-chart screenshots for educational technical-analysis purposes. Focus on visible evidence only and be conservative.
-
-The FIRST image is always the primary M1 chart. Additional images, when supplied, are optional higher-timeframe context and are explicitly labeled M5 or H1 in the user message.
-
-For the primary M1 chart:
-- CALL only when visible price action supports a bullish setup.
-- PUT only when visible price action supports a bearish setup.
-- NEUTRAL when evidence is weak, conflicting, mid-range, blurry, cropped, or lacks usable context.
-- Detect whether the primary screenshot visibly appears to be M1. If another timeframe is visible, set timeframe to "other". If you cannot verify it, set timeframe to "unknown".
-- Set chartQuality to "poor" when candles, labels, or recent price action are too blurry/cropped to analyze reliably.
-- confidence is AI setup-confidence from 0-100 based only on visible chart evidence. It is NOT a measured probability of trade success.
-
-Independent evidence fields:
-- trend: directional trend visible on the primary chart.
-- momentum: short-term momentum visible on the primary chart.
-- structure: swing/high-low or range structure visible on the primary chart.
-- candleSignal: latest relevant candle/candlestick evidence.
-Do NOT force these fields to agree with the proposed bias. Report each independently from visible evidence.
-
-Other fields:
-- supportResistance: briefly state the most relevant visible support/resistance or say no reliable level is visible.
-- evidence: short concrete observations from the screenshot; do not invent indicators or levels that are not visible.
-- contextAlignment: if no context screenshots were supplied use "not_provided". Otherwise compare M5/H1 context with the M1 proposal and choose aligned, mixed, or conflicting.
-- contextNotes: briefly explain the higher-timeframe relationship, or say no context was provided.
-- warnings: important limitations visible in the screenshots.
-
-For weak or unclear setups choose NEUTRAL rather than inventing certainty. Identify the asset/pair only if visible; otherwise use "Unknown Asset".
-Return only the fields required by the supplied JSON schema.`;
-
 export class GroqRequestError extends Error {
   status?: number;
 
@@ -56,6 +27,9 @@ export class GroqRequestError extends Error {
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json();
+    if (typeof data?.error === 'string') {
+      return data.reasonCode ? `${data.error}: ${data.reasonCode}` : data.error;
+    }
     return data?.error?.message || `Groq API error (${response.status})`;
   } catch {
     return `Groq API error (${response.status})`;
@@ -101,24 +75,12 @@ export async function analyzeChartWithGroq(args: {
   minConfidence: number;
   preflight: ImagePreflightResult;
   contextImages?: ContextImage[];
+  configuredAsset: string;
+  capturedAt?: string | null;
 }): Promise<GroqAnalysisResult> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const startedAt = performance.now();
-  const contextImages = (args.contextImages || []).slice(0, 2);
-
-  const userContent: Array<Record<string, unknown>> = [
-    {
-      type: 'text',
-      text: `Analyze the primary M1 screenshot below. Local preflight score: ${args.preflight.score}/100 (${args.preflight.status}). Use the score only as image-quality context; do your own visual assessment.`,
-    },
-    { type: 'image_url', image_url: { url: args.image } },
-  ];
-
-  for (const contextImage of contextImages) {
-    userContent.push({ type: 'text', text: `Optional ${contextImage.label} context screenshot:` });
-    userContent.push({ type: 'image_url', image_url: { url: contextImage.image } });
-  }
 
   try {
     const response = await apiFetch('/api/groq/analyze', {
@@ -128,28 +90,25 @@ export async function analyzeChartWithGroq(args: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-        reasoning_effort: 'none',
-        temperature: GROQ_TEMPERATURE,
-        seed: GROQ_SEED,
-        max_tokens: 850,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'm1_chart_signal_phase3',
-            strict: true,
-            schema: SIGNAL_SCHEMA,
-          },
-        },
+        imageDataUrl: args.image,
+        configuredAsset: args.configuredAsset,
+        capturedAt: args.capturedAt ?? null,
       }),
     });
 
     if (!response.ok) {
-      throw new GroqRequestError(await readErrorMessage(response), response.status);
+      let detail = '';
+      try {
+        const data = await response.clone().json();
+        detail = typeof data?.reasonCode === 'string'
+          ? `${data.error || 'Server analysis rejected'}: ${data.reasonCode}`
+          : typeof data?.error === 'string'
+            ? data.error
+            : '';
+      } catch {
+        // Fall through to the normal Groq error reader.
+      }
+      throw new GroqRequestError(detail || await readErrorMessage(response), response.status);
     }
 
     const rawApiResponseText = await response.text();
@@ -172,7 +131,7 @@ export async function analyzeChartWithGroq(args: {
       args.minConfidence,
       content,
       { score: args.preflight.score, status: args.preflight.status },
-      contextImages.length,
+      0,
     );
     const gatesFinishedAt = performance.now();
     return {
