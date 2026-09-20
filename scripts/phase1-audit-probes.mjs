@@ -15,6 +15,9 @@ const files = {
   tabCapture: fs.readFileSync('src/services/tabCapture.ts','utf8'),
   outcomeResolverSource: fs.readFileSync('src/services/outcomeResolver.ts','utf8'),
   backtestService: fs.readFileSync('src/services/backtest.ts','utf8'),
+  phases: fs.readFileSync('PHASES.md','utf8'),
+  stage3bReport: fs.readFileSync('STAGE3B_VERIFICATION_REPORT.md','utf8'),
+  stage3cReport: fs.readFileSync('STAGE3C_REPORT.md','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -368,4 +371,68 @@ findings.push({
   evidence: 'Backtest timeframe classification uses only the median timestamp interval; a series containing substantial 30s/120s gaps can still be labeled M1 when the median is 60s.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v7', findings }, null, 2));
+
+findings.push({
+  id:'R9-README-CONTEXT-UPLOAD-STALE',
+  status: /Optional M5 and H1 context screenshots/.test(files.readme)
+    && /contextImages:\s*\[\]/.test(files.app)
+    && !/<ContextImagesPanel/.test(files.app)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'README advertises optional M5/H1 context screenshots, but the current decision path hardcodes contextImages:[] and App does not render ContextImagesPanel.',
+});
+
+findings.push({
+  id:'R9-PRECISION-ENABLEMENT-STALE',
+  status: /A profile is not enabled live unless the untouched holdout reaches 80%\+/.test(files.readme)
+    && /const validated = false/.test(files.precision)
+    && /const payoutValidated = false/.test(files.precision)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'README describes an optimizer-produced validated profile, while current optimizer hard-codes validated=false and payoutValidated=false for every generated profile.',
+});
+
+findings.push({
+  id:'R9-PHASE5-PROXY-STALE',
+  status: /Phase 5 — Production security[\s\S]*Server-side API proxy or authenticated accounts/.test(files.phases)
+    && /url\.pathname === '\/api\/groq\/analyze'/.test(files.server)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'PHASES.md presents server-side proxy/auth as future Phase 5, but production already contains authenticated server proxy routes.',
+});
+
+findings.push({
+  id:'R9-RAW-SOURCE-PERSISTENCE-CLAIM-STALE',
+  status: /raw source screenshot bytes are no longer persisted/.test(files.stage3bReport)
+    && /buildFullFrameArtifact\('native_source_frame_png'/.test(files.app)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'Stage3B report says raw source bytes are no longer persisted, but current timeframe rejection path deliberately persists a full native source PNG.',
+});
+
+findings.push({
+  id:'R9-STAGE3C-GROQ-DEPLOYMENT-STALE',
+  status: /GROQ_API_KEY is still absent from the Railway environment/.test(files.stage3cReport)
+    ? 'CONFIRMED_STALE_DEPLOYMENT_CLAIM'
+    : 'UNVERIFIED',
+  evidence: 'Current Railway runtime reports server-side Groq configured=true, while STAGE3C_REPORT says the key is absent.',
+});
+
+findings.push({
+  id:'R9-BACKTEST-SAME-GATES-CLAIM',
+  status: /same Phase 3 gates/.test(files.backtest)
+    && !/inspectAndCropSingleFrame|verifyStage3CFrame/.test(files.backtest)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'Backtest UI says same Phase 3 gates, but BacktestPanel invokes image preflight + analyzeChartWithGroq without the live deterministic screen verifier.',
+});
+
+findings.push({
+  id:'R8-BACKTEST-AUTH-ERROR-STALE',
+  status: /Add your Groq API key in the main dashboard first/.test(files.backtest)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'Backtest unauthenticated error tells the user to add a browser Groq API key, but current architecture uses a server key plus audit authentication.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v8', findings }, null, 2));
