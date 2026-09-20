@@ -43,12 +43,22 @@
 - Circuit breaker after 3 consecutive failures
 - Auto Test never executes trades
 
-## Phase 4 — Validation & analytics ⏭️
-- Outcome labeling
-- Backtest/forward-test dataset format
-- Win/loss analytics by confidence bucket, asset, pattern, and session
+## Phase 4A — Historical forex backtesting ✅
+- M1 OHLC CSV ingestion
+- Common forex pair + custom pair selector
+- Separate FOREX vs OTC datasets
+- 60-candle historical chart replay through the same Groq vision pipeline
+- One-candle expiry outcome labeling
+- Win/loss/tie/NEUTRAL analytics
+- Coverage, 3/4 vs 4/4 confirmation performance, and confidence buckets
+- JSON/CSV backtest export
+
+## Phase 4B — Forward validation & calibration ⏭️
+- Live outcome recorder from the shared Quotex tab
+- Pattern / asset / session analytics across larger datasets
 - Calibration charts
 - Separate empirical performance from AI setup confidence
+- Compare historical replay vs live forward-test behavior
 
 ## Phase 5 — Production security
 - Server-side API proxy or authenticated accounts

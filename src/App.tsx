@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { ApiKeyPanel } from './components/ApiKeyPanel';
 import { AutoTestPanel, type AutoTestStats, type AutoTestStatus } from './components/AutoTestPanel';
+import { BacktestPanel } from './components/BacktestPanel';
 import { ContextImagesPanel } from './components/ContextImagesPanel';
 import { Header } from './components/Header';
 import { HistoryPanel } from './components/HistoryPanel';
@@ -67,6 +68,7 @@ function App() {
   const [minConfidence, setMinConfidence] = useState(() => loadSettings().minConfidence);
   const [autoIntervalSeconds, setAutoIntervalSeconds] = useState(() => loadSettings().autoIntervalSeconds || AUTO_CAPTURE_INTERVAL_SECONDS);
   const [autoTestEnabled, setAutoTestEnabled] = useState(false);
+  const [backtestOpen, setBacktestOpen] = useState(false);
   const [autoStats, setAutoStats] = useState<AutoTestStats>({
     status: 'idle',
     checks: 0,
@@ -668,6 +670,17 @@ function App() {
                   {liveTabActive ? '📸 ANALYZE NOW' : '🧠 ANALYZE CHART'}
                 </button>
 
+                <button
+                  onClick={() => {
+                    if (autoRunningRef.current) stopAutoTest();
+                    setBacktestOpen(true);
+                  }}
+                  disabled={analyzing}
+                  className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-[11px] font-black text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-40"
+                >
+                  🧪 BACKTEST LAB
+                </button>
+
                 <details className="group rounded-lg border border-slate-800 bg-slate-900/45">
                   <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     <span>Context · M5 / H1</span>
@@ -705,9 +718,17 @@ function App() {
         {error && <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4"><p className="text-red-400 font-bold text-sm mb-1">❌ Error</p><p className="text-red-300 text-xs">{error}</p></div>}
       </main>
 
+      {backtestOpen && (
+        <BacktestPanel
+          apiKey={apiKey}
+          minConfidence={minConfidence}
+          onClose={() => setBacktestOpen(false)}
+        />
+      )}
+
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.5 • Compact dashboard • Live chart • Smart Auto Test • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A • Forex backtest lab • Frozen Phase 3 gates • Live dashboard • Educational analysis only</div></footer>
     </div>
   );
 }

@@ -1,11 +1,11 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.3.5-compact-dashboard",
+  "version": "0.4.0-phase4a-backtest",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },

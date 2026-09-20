@@ -1,4 +1,4 @@
-# Quotex M1 Chart Signal AI — Phase 3.3
+# Quotex M1 Chart Signal AI — Phase 4A
 
 A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qwen vision model.
 
@@ -25,6 +25,20 @@ A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qw
 - JSON/CSV history export with evidence fields
 - Railway/Vercel-ready static build
 
+## Phase 4A — Forex backtest lab
+- Full-screen backtest lab opened from the compact live dashboard
+- Common Quotex-style forex pair selector plus custom pair entry
+- FOREX and OTC datasets are explicitly separated
+- M1 OHLC CSV parser with timestamp/timeframe checks
+- 60-candle historical chart replay rendered in-browser
+- Historical samples spread across the loaded dataset
+- Every replay goes through the same Groq vision model, confidence threshold, M1 check, chart-quality gate, and 3/4 evidence confirmation logic
+- 1-candle / 1-minute expiry scoring: CALL=next close up, PUT=next close down, equal close=tie
+- Observed win rate, signal coverage, neutral count, 3/4 vs 4/4 results, and confidence-bucket results
+- Stop control plus JSON/CSV result export
+- 2.2 second request pacing between Groq analyses
+- Production build now runs TypeScript typecheck before Vite build
+
 ## Run locally
 ```bash
 npm install
@@ -40,4 +54,4 @@ This version is BYOK. The Groq API key is stored in the current browser's localS
 A normal website cannot silently enumerate or capture arbitrary browser tabs. You must explicitly select a tab/window in the browser share picker. The selected stream remains in memory only for the current page session. In Auto Test mode, still frames are sampled locally at your chosen interval; near-duplicates are skipped and only qualifying frames proceed to AI analysis.
 
 ## Important
-The displayed confidence is AI setup confidence based on visible chart evidence. The Phase 3 confirmation score measures internal agreement among four AI-described evidence categories. Neither is a measured probability of profit. This tool is for educational analysis only and does not execute trades.
+The displayed confidence is AI setup confidence based on visible chart evidence. The Phase 3 confirmation score measures internal agreement among four AI-described evidence categories. Neither is a measured probability of profit. Phase 4A separately measures observed historical outcomes from replayed data. This tool is for educational analysis only and does not execute trades.
