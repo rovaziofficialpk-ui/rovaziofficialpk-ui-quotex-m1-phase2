@@ -1,0 +1,64 @@
+{
+  "version": "input-pipeline-v1.6.0",
+  "specId": "stage3d-spec-v2",
+  "auditLock": true,
+  "layoutValidationIncomplete": true,
+  "configuredTimeframe": "M1",
+  "configuredAsset": "USER_SESSION_SETTING_REQUIRED",
+  "layoutProfileVersion": "quotex-desktop-observed-v1.3.0",
+  "singleFrameOnly": true,
+  "timeframeVerification": {
+    "logic": "explicit_1m_badge AND time_axis_candle_pitch",
+    "expiryTimerAcceptedAsTimeframe": false,
+    "badge": {
+      "templateVersion": "quotex-1m-template-v1",
+      "matcherVersion": "quotex-1m-matcher-v2",
+      "canonicalTemplateSize": [27, 29],
+      "candidateNormalization": "undo_3x_audit_upscale_to_source_pixels_before_matching",
+      "fixedScaleSearch": [0.75, 0.9, 1.0, 1.1, 1.25, 1.5],
+      "minimumCorrelation": 0.985
+    },
+    "axis": {
+      "minimumUsableIntervals": 3,
+      "minutesPerCandle": 1,
+      "toleranceMinutes": 0.08
+    }
+  },
+  "diagnostics": {
+    "subReasons": [
+      "BADGE_NO_MATCH",
+      "BADGE_TEMPLATE_UNAVAILABLE",
+      "AXIS_INSUFFICIENT_INTERVALS",
+      "AXIS_CANDLE_PITCH_UNAVAILABLE",
+      "AXIS_PITCH_MISMATCH",
+      "BADGE_AXIS_DISAGREE"
+    ],
+    "showFailedCropThumbnail": true,
+    "saveNativePngOnTimeframeReject": true,
+    "recordDevicePixelRatio": true,
+    "recordVisualViewportScale": true,
+    "browserZoom": "NOT_RELIABLY_DETECTABLE_WITH_STANDARD_BROWSER_APIS"
+  },
+  "frozenThresholds": {
+    "timeframeBadgeMinimumCorrelation": 0.985,
+    "minutesPerCandle": 1,
+    "minutesPerCandleTolerance": 0.08,
+    "candlestickMinimumCorrelation": 0.92,
+    "priceAxisMinimumLabels": 5,
+    "priceAxisMinimumR2": 0.995,
+    "priceAxisMaximumPixelSpacingCv": 0.25,
+    "priceAxisMaximumPriceStepCv": 0.1,
+    "ocrMinimumTokenConfidence": 70
+  },
+  "acceptanceHygiene": {
+    "previousAcceptanceSessionsAffected": 0,
+    "reason": "No untouched acceptance sessions existed before this spec change.",
+    "autoUnlock": false
+  },
+  "negativeControls": {
+    "requiredRealNonM1": ["5s", "15s", "30s", "5m", "15m"],
+    "status": "NOT_SUPPLIED",
+    "syntheticResultsCannotSatisfyAcceptance": true
+  },
+  "outcomeDataUsedForRules": false
+}
