@@ -51,10 +51,10 @@ const mutants = [
     to: '      if (false && rows.some((row) => row && row[options.uniqueField] === wanted)) {',
   },
   {
-    name: 'serialized-writer-disabled',
+    name: 'cross-process-file-lock-disabled',
     file: 'server/batch1Security.mjs',
-    from: '  const prior = queues.get(file) || Promise.resolve();',
-    to: '  const prior = Promise.resolve();',
+    from: '    const release = await acquireFileLock(file);',
+    to: '    const release = async () => {};',
   },
   {
     name: 'tamper-recompute-disabled',
