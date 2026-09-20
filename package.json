@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.3.2-auto-test",
+  "version": "0.3.3-live-preview",
   "private": true,
   "type": "module",
   "scripts": {

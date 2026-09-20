@@ -1,8 +1,11 @@
-# Quotex M1 Chart Signal AI — Phase 3.2
+# Quotex M1 Chart Signal AI — Phase 3.3
 
 A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qwen vision model.
 
-## Phase 3.2 highlights
+## Phase 3.3 highlights
+- Continuous real-time live preview from the selected shared browser tab
+- Removed manual Refresh Preview requirement; the shared video feed updates automatically
+- Analyze and Auto Test still capture separate fresh still frames for preflight/AI, independent of the visual preview
 - Live browser-tab sharing through the browser permission picker
 - Smart Auto Test button for adaptive live monitoring
 - 5-second recommended local frame sampling with configurable 3/5/10/15/30 second interval

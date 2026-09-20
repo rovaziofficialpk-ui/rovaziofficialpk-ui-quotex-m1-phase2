@@ -4,12 +4,11 @@ interface LiveTabPanelProps {
   info: LiveTabInfo | null;
   active: boolean;
   busy: boolean;
-  onCapturePreview: () => void;
   onChangeTab: () => void;
   onStop: () => void;
 }
 
-export function LiveTabPanel({ info, active, busy, onCapturePreview, onChangeTab, onStop }: LiveTabPanelProps) {
+export function LiveTabPanel({ info, active, busy, onChangeTab, onStop }: LiveTabPanelProps) {
   if (!active || !info) return null;
 
   return (
@@ -24,13 +23,11 @@ export function LiveTabPanel({ info, active, busy, onCapturePreview, onChangeTab
             <span className="text-xs font-black uppercase tracking-wider text-green-400">Live tab connected</span>
           </div>
           <div className="mt-1 truncate text-xs text-slate-300">{info.label}</div>
-          <div className="mt-0.5 text-[10px] text-slate-500">Manual Analyze captures a fresh frame. Smart Auto Test can sample this shared surface periodically when you enable it.</div>
+          <div className="mt-0.5 text-[10px] text-slate-500">The main chart preview is now a continuous live feed. Analyze and Auto Test capture their own fresh still frames internally.</div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button onClick={onCapturePreview} disabled={busy} className="rounded-md bg-slate-800 px-2.5 py-1.5 text-[10px] font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50">
-            {busy ? 'Capturing…' : 'Refresh preview'}
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-1.5 text-[10px] font-bold text-green-300">● REAL-TIME PREVIEW</span>
           <button onClick={onChangeTab} disabled={busy} className="rounded-md bg-blue-500/15 px-2.5 py-1.5 text-[10px] font-semibold text-blue-300 hover:bg-blue-500/25 disabled:opacity-50">Change tab</button>
           <button onClick={onStop} disabled={busy} className="rounded-md bg-red-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-red-300 hover:bg-red-500/20 disabled:opacity-50">Stop sharing</button>
         </div>

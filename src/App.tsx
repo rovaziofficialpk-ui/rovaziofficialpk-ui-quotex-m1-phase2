@@ -6,6 +6,7 @@ import { Header } from './components/Header';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ImagePreflightPanel } from './components/ImagePreflightPanel';
 import { InfoCards } from './components/InfoCards';
+import { LiveStreamPreview } from './components/LiveStreamPreview';
 import { LiveTabPanel } from './components/LiveTabPanel';
 import { SignalCard } from './components/SignalCard';
 import { UploadPanel } from './components/UploadPanel';
@@ -244,15 +245,6 @@ function App() {
       setError(humanizeTabCaptureError(err));
     } finally {
       setLiveTabBusy(false);
-    }
-  };
-
-  const handleRefreshLivePreview = async () => {
-    setError('');
-    try {
-      await captureFreshLiveFrame();
-    } catch (err) {
-      setError(humanizeTabCaptureError(err));
     }
   };
 
@@ -568,7 +560,7 @@ function App() {
   );
 
   const sourceLabel = liveTabActive
-    ? 'LIVE TAB • FRESH FRAME ON ANALYZE'
+    ? 'LIVE TAB • REAL-TIME PREVIEW'
     : primarySource === 'live'
       ? 'LAST LIVE TAB CAPTURE'
       : primarySource === 'paste'
@@ -602,7 +594,14 @@ function App() {
                   {responseTime !== null && <div className="text-xs font-mono text-green-400">⚡ {(responseTime / 1000).toFixed(2)}s</div>}
                 </div>
                 <div className="relative bg-black rounded-lg overflow-hidden">
-                  <img src={image} alt="Primary chart frame" className="w-full h-auto max-h-[500px] object-contain" />
+                  {liveTabActive && liveStreamRef.current ? (
+                    <LiveStreamPreview
+                      stream={liveStreamRef.current}
+                      className="w-full h-auto max-h-[500px] object-contain"
+                    />
+                  ) : (
+                    <img src={image} alt="Primary chart frame" className="w-full h-auto max-h-[500px] object-contain" />
+                  )}
                   {analyzing && (
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
                       <div className="text-center px-4">
@@ -619,7 +618,6 @@ function App() {
                     info={liveTabInfo}
                     active={liveTabActive}
                     busy={liveTabBusy || analyzing}
-                    onCapturePreview={() => void handleRefreshLivePreview()}
                     onChangeTab={() => void handleStartLiveTab()}
                     onStop={handleStopLiveTab}
                   />
@@ -651,7 +649,7 @@ function App() {
                       <button onClick={() => void analyzeChart()} disabled={!canAnalyze} className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 disabled:from-slate-700 disabled:to-slate-800 text-white font-black rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed text-lg shadow-lg shadow-green-500/20">
                         {liveTabActive ? '📸 CAPTURE LIVE FRAME + ANALYZE' : '🧠 RUN PHASE 3 ANALYSIS'}
                       </button>
-                      {liveTabActive && <p className="text-center text-[10px] text-slate-500">The preview can be old. Clicking Analyze always captures a new live frame first.</p>}
+                      {liveTabActive && <p className="text-center text-[10px] text-green-500/80">Live preview updates continuously. Analyze captures a separate fresh frame for the AI pipeline.</p>}
                     </>
                   )}
                 </div>
@@ -672,7 +670,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.2 • Smart Auto Test • Adaptive change gate • Live browser-tab capture • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.3 • Real-time live preview • Smart Auto Test • Adaptive change gate • Educational analysis only</div></footer>
     </div>
   );
 }
