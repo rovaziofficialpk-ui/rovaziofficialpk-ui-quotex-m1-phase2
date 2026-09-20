@@ -12,6 +12,7 @@ const files = {
   repro: fs.readFileSync('src/services/reproAudit.ts','utf8'),
   outcome: fs.readFileSync('src/services/outcomeResolver.ts','utf8'),
   precision: fs.readFileSync('src/services/precisionOptimizer.ts','utf8'),
+  tabCapture: fs.readFileSync('src/services/tabCapture.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -215,4 +216,33 @@ findings.push({
   evidence: 'Precision profile trust is client-local. Final audit edge gate still forces NEUTRAL, so this is not a final-signal escape.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v2', findings }, null, 2));
+
+findings.push({
+  id:'CAPTURE-TARGET-DPR-METADATA',
+  status: /devicePixelRatio:\s*Number\(\(window\.devicePixelRatio/.test(files.tabCapture)
+    && /cssViewportWidth = Math\.max\(0, window\.innerWidth/.test(files.tabCapture)
+    && /sourceWidth \/ cssViewportWidth/.test(files.tabCapture)
+    ? 'CONFIRMED_DIAGNOSTIC_LIMITATION'
+    : 'UNVERIFIED',
+  evidence: 'Capture videoWidth/videoHeight describe the shared target, but DPR and CSS viewport come from the analyzer app window. For a different shared tab/window, capturePixelsPerCssPixel mixes two browsing contexts and is not the target tab DPR/zoom.',
+});
+
+findings.push({
+  id:'CAPTURE-SURFACE-NOT-ENFORCED',
+  status: /displaySurface: settings\?\.displaySurface \|\| 'browser'/.test(files.tabCapture)
+    && !/displaySurface[^\n]*!==[^\n]*browser|settings\?\.displaySurface[^\n]*===\s*'browser'/.test(files.tabCapture)
+    ? 'CONFIRMED'
+    : 'UNVERIFIED',
+  evidence: 'The picker result records displaySurface but never rejects window/monitor sharing. UI calls it a browser-tab flow, but capture accepts any surface the browser returns.',
+});
+
+findings.push({
+  id:'CAPTURE-MUTED-TRACK-NOT-CHECKED',
+  status: /readyState === 'live' && track\.enabled/.test(files.tabCapture)
+    && !/track\.muted/.test(files.tabCapture)
+    ? 'CONFIRMED'
+    : 'UNVERIFIED',
+  evidence: 'isLiveTabStreamActive checks readyState/enabled but not track.muted; a live-but-muted/frozen source is not specifically classified before frame capture.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v3', findings }, null, 2));
