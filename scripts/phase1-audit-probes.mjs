@@ -81,10 +81,13 @@ findings.push({
   evidence: files.pkg.scripts?.lint ?? null,
 });
 
+const lockfileTracked = spawnSync('git', ['ls-files', '--error-unmatch', 'package-lock.json'], { encoding:'utf8' }).status === 0;
 findings.push({
   id:'B-LOCKFILE',
-  status: fs.existsSync('package-lock.json') ? 'PRESENT' : 'MISSING',
-  evidence: 'A dependency lockfile is required for strong from-scratch reproducibility.',
+  status: lockfileTracked ? 'TRACKED' : 'MISSING_FROM_REPO',
+  evidence: lockfileTracked
+    ? 'package-lock.json is tracked in the audited commit.'
+    : 'npm install may generate package-lock.json locally, but the audited commit does not track one.',
 });
 
 console.log(JSON.stringify({ probeVersion:'phase1-v1', findings }, null, 2));
