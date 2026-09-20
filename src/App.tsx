@@ -31,15 +31,16 @@ import {
   type ContextImage,
   type ContextLabel,
 } from './services/groq';
-import { buildAuditArtifact, buildPrivacyMaskedSourceArtifact, sha256DataUrl } from './services/auditArtifacts';
+import { buildAuditArtifact, buildFullFrameArtifact, buildPrivacyMaskedSourceArtifact, sha256DataUrl } from './services/auditArtifacts';
 import { clearAuditToken, getServerHealth, loadAuditToken, saveAuditToken, verifyAuditAuth, logSettingChange, type ServerHealth } from './services/apiClient';
-import { verifyStage3CFrame } from './services/screenStage3C';
+import { verifyStage3CFrame, type Stage3CVerification } from './services/screenStage3C';
 import { buildResolverSnapshot, type ResolverSnapshot } from './services/outcomeResolver';
 import {
   INPUT_PIPELINE_CONFIG_VERSION,
   LAYOUT_PROFILE_VERSION,
   createDeterministicNeutralSignal,
   inspectAndCropSingleFrame,
+  type CropResult,
 } from './services/screenPipeline';
 import { newRecordId, persistReproDecision, type ReproDecisionRecord } from './services/reproAudit';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
@@ -61,6 +62,7 @@ import {
   isLiveTabStreamActive,
   requestLiveTabShare,
   stopLiveTabShare,
+  type CaptureEnvironment,
   type LiveTabInfo,
 } from './services/tabCapture';
 import { createHistoryItem, type SignalHistoryItem, type TradeSignal } from './signalLogic';
@@ -69,6 +71,15 @@ import { exportHistoryCsv, exportHistoryJson } from './utils/exportHistory';
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 type PrimarySource = 'upload' | 'paste' | 'live';
 type AnalysisStage = 'idle' | 'capturing' | 'preflight' | 'ai';
+
+interface ScreenDiagnosticsState {
+  capturedAt: string | null;
+  sourceFrameSize: { width: number; height: number } | null;
+  captureEnvironment: CaptureEnvironment | null;
+  layoutFound: boolean;
+  verification: Stage3CVerification | null;
+  crops: CropResult[];
+}
 
 function App() {
   const liveStreamRef = useRef<MediaStream | null>(null);
@@ -120,6 +131,7 @@ function App() {
     lastRunAt: null,
   });
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [screenDiagnostics, setScreenDiagnostics] = useState<ScreenDiagnosticsState | null>(null);
   const apiKey = authVerified ? 'server' : '';
 
   const liveTabSupported = isLiveTabCaptureSupported();
@@ -270,6 +282,7 @@ function App() {
     captureMs: number;
     preflightMs: number;
     sourceFrameSize: { width: number; height: number };
+    captureEnvironment: CaptureEnvironment;
   }> => {
     const stream = liveStreamRef.current;
     if (!isLiveTabStreamActive(stream)) {
@@ -289,6 +302,7 @@ function App() {
         captureMs: captured.captureMs,
         preflightMs,
         sourceFrameSize: { width: captured.sourceWidth, height: captured.sourceHeight },
+        captureEnvironment: captured.environment,
       };
     } finally {
       setLiveTabBusy(false);
@@ -469,7 +483,8 @@ function App() {
       captureMs: number | null;
       preflightMs: number | null;
       sourceFrameSize: { width: number; height: number } | null;
-    } = { capturedAt: null, captureMs: null, preflightMs: null, sourceFrameSize: null },
+      captureEnvironment: CaptureEnvironment | null;
+    } = { capturedAt: null, captureMs: null, preflightMs: null, sourceFrameSize: null, captureEnvironment: null },
   ): Promise<TradeSignal> => {
     const source: AuditSignalSource = primarySource === 'live'
       ? 'live_tab'
@@ -538,6 +553,15 @@ function App() {
         },
       };
     }
+    setScreenDiagnostics({
+      capturedAt: auditMeta.capturedAt,
+      sourceFrameSize: auditMeta.sourceFrameSize ?? { width: deterministic.metrics.width, height: deterministic.metrics.height },
+      captureEnvironment: auditMeta.captureEnvironment,
+      layoutFound: deterministic.layoutFound,
+      verification: fieldVerification,
+      crops: deterministic.crops,
+    });
+
     const persistRecord = async (record: ReproDecisionRecord) => {
       const durable = await persistReproDecision(record, artifacts);
       if (!durable.durable) {
@@ -546,6 +570,12 @@ function App() {
     };
 
     if (!deterministic.safeForAi) {
+      const timeframeRejected = deterministic.reasons.includes('TIMEFRAME_UNVERIFIED')
+        || deterministic.reasons.includes('TIMEFRAME_MISMATCH');
+      if (timeframeRejected && analysisImage.startsWith('data:image/png')) {
+        artifacts.push(await buildFullFrameArtifact('native_source_frame_png', analysisImage, auditMeta.capturedAt));
+      }
+
       const decisionAt = new Date().toISOString();
       const neutral = createDeterministicNeutralSignal(deterministic);
       if (fieldVerification?.asset.normalized) neutral.pair = fieldVerification.asset.normalized;
@@ -604,7 +634,12 @@ function App() {
           : fieldVerification?.frameVerified && !fieldVerification.productionEligible
             ? 'FRAME_VERIFIED_BUT_ACCEPTANCE_SET_INCOMPLETE'
             : 'CALIBRATED_LAYOUT_FOUND_BUT_REQUIRED_FIELDS_UNVERIFIED',
-        deterministicScreen: { ...deterministic, fieldVerification },
+        deterministicScreen: {
+          ...deterministic,
+          fieldVerification,
+          captureEnvironment: auditMeta.captureEnvironment,
+        },
+        captureEnvironment: auditMeta.captureEnvironment,
         rawModelResponseText: null,
         modelCallSkippedReason: deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT',
         preflight: analysisPreflight,
@@ -629,6 +664,9 @@ function App() {
             : {}),
           expiry: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
           deterministicTimeframe: deterministic.timeframe.reasonCode || 'TIMEFRAME_UNVERIFIED',
+          ...(fieldVerification?.timeframeDiagnostics.subReasons.length
+            ? { timeframeSubReasons: fieldVerification.timeframeDiagnostics.subReasons.map((item) => item.code).join('|') }
+            : {}),
           deterministicAsset: deterministic.asset.reasonCode || 'ASSET_UNVERIFIED',
           priceAxis: deterministic.priceAxis.reasonCode || 'PRICE_AXIS_UNREADABLE',
           timeAxis: deterministic.timeAxis.reasonCode || 'TIME_AXIS_UNREADABLE',
@@ -642,7 +680,14 @@ function App() {
       } catch (auditError) {
         setError(`Audit warning: deterministic reject stayed NEUTRAL, but reproducibility logging failed: ${auditError instanceof Error ? auditError.message : 'unknown error'}`);
       }
-      setError(`Blocked before AI: ${deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT'}. No model image was sent.`);
+      const timeframeDetail = fieldVerification?.timeframeDiagnostics.subReasons
+        .map((item) => item.message)
+        .join(' ');
+      setError(
+        `Blocked before AI: ${deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT'}.`
+        + (timeframeDetail ? ` ${timeframeDetail}` : '')
+        + ' No model image was sent.',
+      );
       return neutral;
     }
 
@@ -889,6 +934,7 @@ function App() {
         captureMs: captured.captureMs,
         preflightMs,
         sourceFrameSize: { width: captured.sourceWidth, height: captured.sourceHeight },
+        captureEnvironment: captured.environment,
       });
       setError('');
       autoBaselineRef.current = fingerprint;
@@ -960,6 +1006,7 @@ function App() {
         captureMs: null as number | null,
         preflightMs: null as number | null,
         sourceFrameSize: null as { width: number; height: number } | null,
+        captureEnvironment: null as CaptureEnvironment | null,
       };
 
       if (liveTabActive) {
@@ -973,6 +1020,7 @@ function App() {
           captureMs: freshFrame.captureMs,
           preflightMs: freshFrame.preflightMs,
           sourceFrameSize: freshFrame.sourceFrameSize,
+          captureEnvironment: freshFrame.captureEnvironment,
         };
       } else if (analysisImage) {
         const preflightStartedAt = performance.now();
@@ -1010,6 +1058,7 @@ function App() {
     setSignal(null);
     setError('');
     setResponseTime(null);
+    setScreenDiagnostics(null);
     setAnalysisStage('idle');
   };
 
@@ -1131,6 +1180,71 @@ function App() {
                 )}
 
                 <ImagePreflightPanel result={preflight} loading={preflightLoading} />
+
+                {screenDiagnostics?.verification && (
+                  <details open className="rounded-lg border border-amber-500/30 bg-amber-500/5">
+                    <summary className="cursor-pointer px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300">
+                      🔎 Timeframe diagnostics
+                    </summary>
+                    <div className="space-y-2 border-t border-amber-500/20 p-2.5 text-[9px] text-slate-400">
+                      <div className="grid grid-cols-2 gap-1 font-mono">
+                        <span>Frame</span>
+                        <span>{screenDiagnostics.sourceFrameSize ? `${screenDiagnostics.sourceFrameSize.width}×${screenDiagnostics.sourceFrameSize.height}` : 'unknown'}</span>
+                        <span>Layout located</span>
+                        <span>{screenDiagnostics.layoutFound ? 'YES' : 'NO'}</span>
+                        <span>devicePixelRatio</span>
+                        <span>{screenDiagnostics.captureEnvironment?.devicePixelRatio ?? 'not recorded'}</span>
+                        <span>visualViewport.scale</span>
+                        <span>{screenDiagnostics.captureEnvironment?.visualViewportScale ?? 'not recorded'}</span>
+                        <span>Browser zoom</span>
+                        <span>{screenDiagnostics.captureEnvironment?.browserZoomPercent ?? 'not reliably detectable'}</span>
+                        <span>Badge score</span>
+                        <span>
+                          {screenDiagnostics.verification.timeframeDiagnostics.badge.score ?? 'null'}
+                          {' / '}
+                          {screenDiagnostics.verification.timeframeDiagnostics.badge.threshold}
+                        </span>
+                        <span>Badge scale</span>
+                        <span>{screenDiagnostics.verification.timeframeDiagnostics.badge.bestScale ?? 'none'}</span>
+                        <span>Usable axis intervals</span>
+                        <span>
+                          {screenDiagnostics.verification.timeframeDiagnostics.axis.usableIntervals}
+                          {' / '}
+                          {screenDiagnostics.verification.timeframeDiagnostics.axis.requiredIntervals}
+                        </span>
+                        <span>Candle pitch</span>
+                        <span>{screenDiagnostics.verification.timeframeDiagnostics.axis.candlePitchPx ?? 'null'} px</span>
+                        <span>Minutes/candle</span>
+                        <span>{screenDiagnostics.verification.timeframeDiagnostics.axis.minutesPerCandle ?? 'null'}</span>
+                      </div>
+
+                      {screenDiagnostics.verification.timeframeDiagnostics.subReasons.length > 0 && (
+                        <div className="space-y-1">
+                          {screenDiagnostics.verification.timeframeDiagnostics.subReasons.map((reason) => (
+                            <div key={reason.code} className="rounded border border-red-500/20 bg-red-500/5 px-2 py-1 text-red-300">
+                              <span className="font-black">{reason.code}</span> — {reason.message}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-2">
+                        {screenDiagnostics.verification.timeframeDiagnostics.failedCropRoles.map((role) => {
+                          const crop = screenDiagnostics.crops.find((item) => item.role === role);
+                          if (!crop) return null;
+                          return (
+                            <div key={role} className="rounded border border-slate-700 bg-slate-950 p-2">
+                              <div className="mb-1 font-mono text-[8px] text-slate-500">
+                                {role} crop · x={crop.rect.x} y={crop.rect.y} w={crop.rect.width} h={crop.rect.height}
+                              </div>
+                              <img src={crop.dataUrl} alt={`${role} diagnostic crop`} className="max-h-28 w-full rounded bg-black object-contain [image-rendering:pixelated]" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </details>
+                )}
 
                 <OutcomeResolverPanel
                   liveTabActive={liveTabActive}
