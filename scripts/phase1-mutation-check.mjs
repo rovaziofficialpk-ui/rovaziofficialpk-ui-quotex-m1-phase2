@@ -14,6 +14,97 @@ const mutants = [
     from: "  if (!layoutFound) reasons.push('LAYOUT_NOT_FOUND');",
     to: "  if (false && !layoutFound) reasons.push('LAYOUT_NOT_FOUND');",
   },
+
+  {
+    name: 'letterbox-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "  if (metrics.outerNearBlackRatio > PROFILE.maxNearBlackEdge) reasons.push('LETTERBOX_DETECTED');",
+    to: "  if (false && metrics.outerNearBlackRatio > PROFILE.maxNearBlackEdge) reasons.push('LETTERBOX_DETECTED');",
+  },
+  {
+    name: 'candle-count-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "  if (metrics.candleCount < PROFILE.minCandles || metrics.candleCount > PROFILE.maxCandles) reasons.push('CANDLE_COUNT_OUT_OF_RANGE');",
+    to: "  if (false && (metrics.candleCount < PROFILE.minCandles || metrics.candleCount > PROFILE.maxCandles)) reasons.push('CANDLE_COUNT_OUT_OF_RANGE');",
+  },
+  {
+    name: 'newest-candle-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "  if (metrics.lastCandleXFraction === null || metrics.lastCandleXFraction < 0.45 || metrics.lastCandleXFraction > 0.80) reasons.push('NEWEST_CANDLE_NOT_VISIBLE');",
+    to: "  if (false && (metrics.lastCandleXFraction === null || metrics.lastCandleXFraction < 0.45 || metrics.lastCandleXFraction > 0.80)) reasons.push('NEWEST_CANDLE_NOT_VISIBLE');",
+  },
+  {
+    name: 'current-price-marker-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "  if (metrics.currentPriceBlueRatio < PROFILE.minPriceBlue || metrics.horizontalMarkerRowRatio < PROFILE.minMarkerRow) reasons.push('CURRENT_PRICE_MARKER_MISSING');",
+    to: "  if (false && (metrics.currentPriceBlueRatio < PROFILE.minPriceBlue || metrics.horizontalMarkerRowRatio < PROFILE.minMarkerRow)) reasons.push('CURRENT_PRICE_MARKER_MISSING');",
+  },
+  {
+    name: 'price-axis-readable-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    if (!args.priceAxisReadable) reasons.push('PRICE_AXIS_UNREADABLE');",
+    to: "    if (false && !args.priceAxisReadable) reasons.push('PRICE_AXIS_UNREADABLE');",
+  },
+  {
+    name: 'time-axis-readable-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    if (!args.timeAxisReadable) reasons.push('TIME_AXIS_UNREADABLE');",
+    to: "    if (false && !args.timeAxisReadable) reasons.push('TIME_AXIS_UNREADABLE');",
+  },
+  {
+    name: 'timeframe-unverified-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    if (!args.parsedTimeframe) reasons.push('TIMEFRAME_UNVERIFIED');",
+    to: "    if (false && !args.parsedTimeframe) reasons.push('TIMEFRAME_UNVERIFIED');",
+  },
+  {
+    name: 'timeframe-mismatch-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    else if (args.parsedTimeframe !== args.configuredTimeframe) reasons.push('TIMEFRAME_MISMATCH');",
+    to: "    else if (false && args.parsedTimeframe !== args.configuredTimeframe) reasons.push('TIMEFRAME_MISMATCH');",
+  },
+  {
+    name: 'asset-unverified-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    if (!args.configuredAsset || !args.parsedAsset) reasons.push('ASSET_UNVERIFIED');",
+    to: "    if (false && (!args.configuredAsset || !args.parsedAsset)) reasons.push('ASSET_UNVERIFIED');",
+  },
+  {
+    name: 'asset-mismatch-gate-disabled',
+    file: 'src/services/screenPipeline.ts',
+    from: "    else if (args.parsedAsset !== args.configuredAsset) reasons.push('ASSET_MISMATCH');",
+    to: "    else if (false && args.parsedAsset !== args.configuredAsset) reasons.push('ASSET_MISMATCH');",
+  },
+  {
+    name: 'field-coverage-lock-enabled',
+    file: 'src/services/screenFieldVerification.ts',
+    from: 'export const LAYOUT_VALIDATION_COVERAGE_COMPLETE = false;',
+    to: 'export const LAYOUT_VALIDATION_COVERAGE_COMPLETE = true;',
+  },
+  {
+    name: 'stage3c-coverage-lock-enabled',
+    file: 'src/services/screenStage3C.ts',
+    from: 'export const STAGE3C_VALIDATION_COVERAGE_COMPLETE = false;',
+    to: 'export const STAGE3C_VALIDATION_COVERAGE_COMPLETE = true;',
+  },
+  {
+    name: 'wilson-z-zeroed',
+    file: 'src/services/precisionOptimizer.ts',
+    from: '  const z = 1.959963984540054;',
+    to: '  const z = 0;',
+  },
+  {
+    name: 'wilson-ties-added-to-denominator',
+    file: 'src/services/precisionOptimizer.ts',
+    from: '  const decided = wins + losses;',
+    to: '  const decided = wins + losses + ties;',
+  },
+  {
+    name: 'payout-breakeven-formula-broken',
+    file: 'src/services/screenStage3C.ts',
+    from: '    breakevenWinRate: Number((1 / (1 + payoutDecimal)).toFixed(6)),',
+    to: '    breakevenWinRate: Number((1 / payoutDecimal).toFixed(6)),',
+  },
   {
     name: 'timeframe-and-changed-to-or',
     file: 'src/services/screenFieldVerification.ts',
@@ -91,4 +182,4 @@ for (const mutant of mutants) {
   });
 }
 
-console.log(JSON.stringify({ mutationCheckVersion:'phase1-v1', results }, null, 2));
+console.log(JSON.stringify({ mutationCheckVersion:'phase1-v2', results }, null, 2));
