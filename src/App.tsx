@@ -585,6 +585,12 @@ function App() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-4">
+              {signal && (
+                <div className="scroll-mt-24">
+                  <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />
+                </div>
+              )}
+
               <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div>
@@ -654,8 +660,6 @@ function App() {
                   )}
                 </div>
               </div>
-
-              {signal && <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />}
             </div>
 
             <div className="space-y-4">
@@ -670,7 +674,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.3 • Real-time live preview • Smart Auto Test • Adaptive change gate • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.4 • Signal result above chart • Real-time live preview • Smart Auto Test • Educational analysis only</div></footer>
     </div>
   );
 }
