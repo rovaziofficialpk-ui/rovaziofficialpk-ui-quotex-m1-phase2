@@ -2,261 +2,294 @@
 
 Date: 2026-09-20  
 Branch: `phase2/batch1-p0-proof-audit-integrity`  
+PR: #2  
 Base: `main@eb2ba5b2b66bf85b2fe1183ac6a78f0c99d2421b`
 
 ## Scope and deployment state
 
-This batch implements only approved Batch 1 items:
+This PR implements only approved Batch 1 items:
 
 - server-side proof boundary for `POST /api/groq/analyze`;
-- server-owned Groq model/prompt/temperature/seed/strict JSON schema;
+- server-owned Groq model, existing prompt, temperature, seed, strict response schema, max tokens, image-count policy;
 - native-frame server deterministic verification before any image-bearing Groq call;
-- request/image size limits and server upstream timeout;
-- serialized append-only audit writes;
-- server-side audit-record/artifact schema validation;
+- analyze request/image size limits and server-side upstream timeout;
+- serialized hash-chain writes with an in-process queue plus an atomic filesystem write lock for cross-process writers;
+- decision-record/artifact schema validation;
 - duplicate `recordId` rejection;
-- server-generated chain timestamp, previous hash and record hash;
-- authenticated hash-chain verification/tamper detection;
+- server-generated `serverRecordedAt`, `previousRecordHash`, and `recordHash`;
+- authenticated hash-chain verification and tamper detection;
 - malformed JSON -> HTTP 400;
-- browser security headers on API and static responses.
+- browser security headers.
 
-No Batch 2/3/4 finding was intentionally fixed in this batch.
+**Production is not deployed or changed.** This PR must not be merged/deployed until explicit approval.
 
-**Production was not deployed or changed.** Railway remains on the existing `main` build until explicit approval.
-
-Safety state after the batch:
+Safety state:
 
 - AUDIT LOCK: **ON**
-- LAYOUT_VALIDATION_INCOMPLETE: **ON**
-- server validation-coverage lock: **ON / false for eligibility**
+- `LAYOUT_VALIDATION_INCOMPLETE`: **ON**
+- server validation-coverage eligibility lock: **ON**
 - automatic unlock: **not added**
-- app trade placement: **not added**
+- automatic trade placement: **not added**
 
 ## Spec hygiene
 
-**No spec bump in Batch 1.**
+**No spec ID bump in Batch 1.**
 
-Reason: no frozen threshold, template, layout coordinate, timeframe AND-rule, signal threshold, or outcome rule was changed. The server now independently enforces the existing frozen deterministic conditions and retains the existing validation-incomplete lock.
+No frozen threshold, template, layout coordinate, timeframe AND-rule, min-confidence rule, price-axis occlusion rule, or outcome rule was changed. Batch 1 adds a second enforcement boundary on the server using the existing frozen values.
 
-Existing threshold examples remain unchanged:
+The AI prompt is also not intentionally changed: the existing `vision-signal-v4.0.0` prompt text was moved from client authority to the server.
 
-- timeframe template correlation: 0.985
-- timeframe fixed scales: 0.75, 0.9, 1.0, 1.1, 1.25, 1.5
-- chart-type candlestick correlation: 0.92
-- price-axis R²: 0.995
-- price-axis pixel-spacing CV: 0.25
-- price-axis price-step CV: 0.10
-- clock staleness tolerance: 5 seconds
+Frozen values remain unchanged, including:
+
+- timeframe badge threshold: **0.985**
+- fixed badge scales: **0.75, 0.9, 1.0, 1.1, 1.25, 1.5**
+- timeframe logic: **badge AND time-axis/candle-pitch**
+- minutes/candle tolerance: **±0.08**
+- candlestick threshold: **0.92**
+- price-axis R²: **0.995**
+- price-axis pixel-spacing CV: **0.25**
+- price-axis price-step CV: **0.10**
+- OCR minimum confidence: **70**
+- clock staleness tolerance: **5 s**
 
 Acceptance sessions affected: **0**.
 
-The E4 occlusion-rule change and `minConfidence` versioning are deliberately deferred to the single Batch 3 spec bump.
+The E4 occlusion change and `minConfidence` spec-versioning remain deferred to the single approved Batch 3 spec bump.
+
+## Phase 1 baseline reconciliation
+
+Pinned Phase 1 evidence:
+
+- artifact: `phase1-audit-evidence-9e0f1653.zip`
+- SHA-256: `bc27d6b6191e682cfd9014b726bbe1863d0de1bf248418c4059ddc8f24371ddc`
+
+The Phase 1 source-only hash-chain probe had status `UNVERIFIED`. The Phase 1 runtime integration probe then executed 120 concurrent writes and measured:
+
+- non-201 responses: **0**
+- broken adjacent chain links: **119**
+- strictly linear: **false**
+
+Therefore the reconciled Phase 1 hash-chain status is **CONFIRMED_FAIL**, not UNVERIFIED.
+
+The Batch 1 reconciliation script requires the rerun source probe and runtime probe to agree. After the fix they both report PASS/linear-chain behavior.
 
 ## Finding-by-finding before / after
 
-| Phase 1 finding | Before | Batch 1 permanent probe | After |
+| Finding | Phase 1 evidence | Permanent Batch 1 regression | Batch 1 result |
 |---|---|---|---|
-| R2 server Groq gate bypass | CONFIRMED_FAIL; authenticated arbitrary image/model payload reached outbound Groq transport | `R2-SERVER-GATE` + outbound-spy integration | **PASS** |
-| Client could choose Groq model/settings | CONFIRMED_FAIL | `AI-SERVER-PAYLOAD-NOT-FROZEN` | **PASS** |
-| No server upstream timeout | CONFIRMED_FAIL | `AI-SERVER-UPSTREAM-TIMEOUT` | **PASS** |
-| Analyze size policy did not match upstream image constraints | confirmed mismatch | `AI-REQUEST-SIZE-POLICY` | **PASS** |
-| Hash-chain concurrent append race | CONFIRMED; 120 writes produced 119 broken adjacent links | `AUDIT-HASHCHAIN-CONCURRENCY` + 120-write runtime probe | **PASS; 0 broken links** |
-| Audit record accepted weak/forged envelope | confirmed weak server schema | `AUDIT-RECORD-SERVER-SCHEMA` | **PASS for the approved schema requirement** |
-| Duplicate decision record IDs accepted | CONFIRMED | `AUDIT-DUPLICATE-RECORDID` | **PASS** |
-| No direct tamper verifier | CONFIRMED gap | `AUDIT-TAMPER-DETECTION` | **PASS** |
-| Malformed JSON returned 500 | CONFIRMED | `MALFORMED-JSON-STATUS` | **PASS; returns 400** |
-| Static/API browser hardening headers absent | CONFIRMED | `SECURITY-HEADERS` | **PASS** |
+| R2 server proof-boundary bypass | arbitrary authenticated image/model request returned 200 and hit outbound Groq spy | outbound-spy integration + `R2-SERVER-GATE` | **PASS** |
+| client chose model/settings | `CONFIRMED_FAIL` | request-envelope rejection + fixed-payload unit test | **PASS** |
+| no server upstream timeout | `CONFIRMED_FAIL` | AbortController/source regression | **PASS** |
+| analyze size policy mismatch | `CONFIRMED_MISMATCH` | body/image limit source + policy regressions | **PASS** |
+| concurrent hash-chain race | runtime: 119 broken links / 120 writes | runtime concurrency probe + chain verifier | **PASS: 0 broken links** |
+| weak audit-record envelope | `CONFIRMED_WEAK` | invalid-record integration | **PASS for Batch 1 schema scope** |
+| duplicate `recordId` accepted | runtime: second write 201 | duplicate integration | **PASS: 409** |
+| no authenticated tamper verifier | gap | post-write mutation + verifier | **PASS** |
+| malformed JSON -> 500 | runtime 500 | malformed JSON integration | **PASS: 400** |
+| browser hardening headers absent | Phase 1 headers null | header integration | **PASS** |
 
-The Batch 1 copy of the Phase 1 probe suite now uses a uniform rule for these fixed findings: **PASS** when the protection is present, otherwise **CONFIRMED_FAIL**. The probes are retained as permanent regression tests.
+Every fixed finding keeps its Phase 1 probe/probe-equivalent in the branch as a permanent regression test.
 
 ## A. Server-side proof boundary
 
-The analyze endpoint no longer accepts an OpenAI/Groq request body from the browser.
+The browser can no longer submit a Groq/OpenAI payload to `/api/groq/analyze`.
 
-Accepted client fields are restricted to:
+Allowed client fields are restricted to:
 
-- native `imageDataUrl`;
-- configured asset;
-- capture timestamp.
+- `imageDataUrl` — native captured frame;
+- `configuredAsset`;
+- `capturedAt`.
 
-Fields such as `model`, `temperature`, `seed`, `response_format`, `messages`, and arbitrary extra fields are rejected before model transport.
+Caller-supplied `model`, `messages`, `temperature`, `seed`, `response_format`, or any other extra field causes HTTP 400 `CLIENT_MODEL_PARAMETERS_FORBIDDEN`.
 
-Server-owned policy:
+Server-fixed policy:
 
 - model: `qwen/qwen3.8-27b`
+- prompt version: `vision-signal-v4.0.0`
+- prompt text: existing v4 prompt, moved server-side
 - temperature: `0`
 - seed: `424242`
 - max tokens: `850`
 - response format: strict JSON Schema
-- additional properties: false
-- prompt: the existing `vision-signal-v4.0.0` prompt was moved server-side without intentionally changing its text
-- upstream timeout: 30 seconds
-- decoded image max: 20 MiB
-- analyze request-body max: 28 MiB
+- schema `additionalProperties: false`
+- input images: one server-generated primary crop only
+- decoded image max: **20 MiB**
+- analyze body max: **28 MiB**
+- upstream timeout: **30 s**
 
 Flow:
 
 ```
 authenticated request
         |
-validate request envelope
+strict request-envelope validation
         |
-decode native frame + byte/MIME limit
+native image decode + byte/MIME limits
         |
 server deterministic verifier
         |
-eligibleForModel == true ?
-      /                 \
-    NO                   YES
-  HTTP 422             server crop
-  zero Groq calls        |
-                     fixed Groq payload
-                         |
-                       Groq
+eligibleForModel?
+     /        \
+   NO          YES
+ HTTP 422       server primary crop
+ zero Groq      fixed server payload
+ calls                |
+                    Groq
 ```
 
-The server verifier independently checks the existing structural/layout, preflight, timeframe badge AND time-axis/candle-pitch, asset, price-axis, chart-type, and clock conditions. Its validation-coverage lock remains false, so it cannot silently unlock model eligibility.
+The independent server verifier mirrors the existing structural/layout, preflight, timeframe badge AND time-axis/candle-pitch, configured-asset, price-axis, chart-type, and clock checks.
 
-### Runtime outbound-spy evidence
+Its validation-coverage lock remains false, so Batch 1 does **not** create an accidental production unlock.
 
-The real Node server was started under the test suite with an outbound fetch spy.
+### Outbound-spy runtime result
 
-Observed:
+For a real local server process with a Groq fetch spy:
 
-- arbitrary old OpenAI-style payload -> **400**
-- request containing caller-selected model -> **400**
-- blank/native arbitrary image that fails deterministic checks -> **422**
-- outbound Groq calls for those rejected requests -> **0**
+- attacker-selected model/settings payload -> **400**
+- deterministic-failing native image -> **422**
+- outbound Groq calls -> **0**
 
-No failing-gate image reached the model transport.
+No rejected image reaches model transport.
 
-A successful image-bearing Groq call is intentionally **not** claimed/tested while `LAYOUT_VALIDATION_INCOMPLETE` is ON. The fixed outbound payload itself is unit-tested. This preserves the lock rather than bypassing it for a positive test.
+A successful image-bearing model call is intentionally not claimed while validation coverage is incomplete.
 
 ## B. Audit log integrity
 
-Writes are serialized per NDJSON file through a single in-process writer queue.
+Hash-chained writes use both:
 
-For each stored row the server now:
+1. a per-file in-process promise queue; and
+2. an atomic filesystem lock directory around the read-head/hash/append critical section.
 
-1. validates the approved envelope where required;
-2. checks duplicate unique IDs where required;
-3. reads the current chain head inside the serialized section;
-4. discards caller-supplied chain hash/timestamp fields;
+The filesystem lock makes the chain safe across multiple Node server processes sharing the same audit volume, not only within one process.
+
+For a decision record the server:
+
+1. validates the decision envelope and artifact envelopes;
+2. rejects duplicate `recordId`;
+3. ignores caller-supplied chain/server timestamp fields;
+4. obtains the current chain head while holding the write lock;
 5. adds server `serverRecordedAt`;
 6. adds `previousRecordHash`;
 7. computes SHA-256 `recordHash`;
-8. appends the finalized row.
+8. appends the final NDJSON row.
 
-### 120-concurrent-write rerun
+The stored decision metadata is also required to match the server-owned model/prompt/temperature/seed policy.
 
-Phase 1 runtime result:
+### Concurrency evidence
 
-- writes attempted: 120
-- non-201 writes: 0
-- broken adjacent links: **119**
+Phase 1:
 
-Batch 1 runtime result:
+- writes: **120**
+- non-201: **0**
+- broken links: **119**
+- linear: **false**
 
-- writes attempted: 120
-- non-201 writes: **0**
-- broken adjacent links: **0**
-- strictly linear chain: **true**
+Batch 1 integration probe:
 
-The source-level `phase1-probes.json` hash-chain finding and runtime integration result are reconciled by `scripts/batch1-reconcile.mjs` and the reconciliation result is **true**.
+- writes: **120**
+- non-201: **0**
+- broken links: **0**
+- linear: **true**
 
-### Record schema / duplicate / tamper evidence
+The permanent regression suite additionally writes decision records from **two server processes sharing one audit directory** and verifies one linear chain.
 
-- invalid decision-record envelope -> **400**
+### Schema, duplicate and tamper evidence
+
+- invalid decision envelope -> **400**
 - valid decision record -> **201**
-- second write with same `recordId` -> **409**
-- clean chain verifier -> **200 / valid=true**
-- record modified after write -> **409 / valid=false / RECORD_HASH_MISMATCH**
+- duplicate `recordId` -> **409**
+- clean chain -> **valid**
+- record modified after write -> **409 / RECORD_HASH_MISMATCH**
 
-The audit endpoint still accepts authenticated client-supplied semantic content inside fields such as `deterministicScreen`; Batch 1's approved requirement was server-side record schema/integrity, not full server reconstruction of every stored decision. Real deterministic replay/provenance is Batch 3.
+Batch 1 does not claim semantic replay of every stored decision. Real deterministic replay is Batch 3.
 
-## C. Malformed JSON and security headers
+## C. Malformed JSON and browser security headers
 
-Malformed JSON is now normalized to the stable error:
+Malformed JSON now returns:
 
 ```
 HTTP 400
 MALFORMED_JSON
 ```
 
-Security response policy includes:
+Applied response protections include:
 
-- Content-Security-Policy
-- X-Frame-Options: DENY
-- X-Content-Type-Options: nosniff
-- Referrer-Policy: no-referrer
-- Permissions-Policy
-- Cross-Origin-Opener-Policy
-- Cross-Origin-Resource-Policy
-- Strict-Transport-Security
+- `Content-Security-Policy`
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy`
+- `Cross-Origin-Opener-Policy`
+- `Cache-Control: no-store` for API responses
 
-The same helper is used by API responses and normal/static error responses.
+Static 403/404 paths also receive the security-header helper.
 
-## Tests
+## Docker/runtime compatibility
 
-Final clean CI run at `f42e08e62a10debd768bc38a317c4b9ccf3e8d90`:
+Batch 1 adds `sharp` for server-native image decoding. The Docker runtime stage now copies:
 
-- baseline + Batch 1 test suite: **63 / 63 PASS**
-- Phase 1 direct production-runtime audit suite: **29 / 29 PASS**
-- TypeScript strict check: **PASS**
+- `node_modules` from the build stage;
+- the new `server/` modules;
+- `server.mjs`.
+
+This prevents a successful frontend build from producing a runtime image that cannot import the server verifier.
+
+## Tests and mutation testing
+
+A clean Batch 1 CI run on the branch has demonstrated:
+
+- baseline + Batch 1 suite: **66 / 66 PASS**
+- Phase 1 production-runtime audit suite: **29 / 29 PASS**
+- TypeScript strict mode: **PASS**
 - production Vite build: **PASS**
-- dependency audit: **0 vulnerabilities**
+- npm dependency audit: **0 vulnerabilities**
 - Phase 1 fixed-finding probes: **PASS**
-- server integration probe: **PASS**
+- Batch 1 server integration probe: **PASS**
 - source/runtime reconciliation: **PASS**
-- lock assertions: **PASS**
+- Phase 1 mutation checks: **26 / 26 detected**
+- Batch 1 P0 mutation checks: **13 / 13 detected**
+- undetected sabotage in the clean run: **0**
 
-### Dependency audit correction
+During development an earlier mutation run exposed weak mutation coverage rather than a production bypass:
 
-The first implementation used Sharp 0.34.x and the CI dependency audit surfaced one high-severity direct advisory affecting that range. The dependency was upgraded to `sharp ^0.35.4`, which the same clean CI audit reports as:
+- the image-limit source assertion was initially too broad;
+- a mutation that disabled only the in-process queue remained harmless because the independent filesystem lock still serialized writes.
 
-- info 0
-- low 0
-- moderate 0
-- high 0
-- critical 0
+The tests were corrected: the image-limit guard is matched exactly, and the audit-lock mutation now targets the real cross-process filesystem lock. The full mutation suites are rerun after the correction.
 
-No vulnerable Sharp version is knowingly left in the Batch 1 branch.
+## Open issues intentionally left for later batches
 
-## Mutation testing
+Batch 2:
 
-All original Phase 1 sampled sabotages were rerun:
+- outcome invalid-direction handling;
+- structural/asset/expiry resolver requirements;
+- actual trade expiry reference and elapsed-time tolerance;
+- stale timer/busy closure;
+- R1 history/display/export neutralization;
+- R5 invented defaults.
 
-- Phase 1 mutants: **26**
-- detected: **26**
-- undetected: **0**
+Batch 3:
 
-Batch 1 added 13 P0-specific sabotages covering proof-boundary bypass, caller-model filtering, fixed temperature/seed, upstream abort signal, image byte limit, audit schema, duplicate ID, serialization, tamper verification, malformed-JSON status, frame headers, and the server validation-coverage lock.
+- real deterministic replay with stored runtime gate parameters;
+- native-frame storage/replay cost decision;
+- single spec bump for E4 price-axis occlusion rejection and `minConfidence` versioning.
 
-Final Batch 1 mutation result:
+Batch 4:
 
-- Batch 1 mutants: **13**
-- detected: **13**
-- undetected: **0**
+- tracked lockfile and linter;
+- Auto Test AI-run/cooldown/re-entry fixes;
+- Backtest unknown-timeframe/ISO/UTC/provenance corrections;
+- stale docs/UI claims;
+- stable error-reason coverage.
 
-An earlier Batch 1 CI attempt exposed **one undetected sabotage**: `analyze-image-limit-disabled`. The production limit itself was present, but the initial regression assertion was too weak and still matched the sabotaged source. The regression test was strengthened to require the actual guarding `if (decoded.bytes.length > ANALYZE_MAX_IMAGE_BYTES)` statement. After that correction the full mutation suite was rerun and all 13/13 Batch 1 mutants were detected. This test weakness is not hidden from the final report.
+Still unverified:
 
-## Open issues after Batch 1
-
-These remain intentionally open because they belong to later approved batches:
-
-- Batch 2: invalid outcome direction, structural/asset/expiry resolver validation, actual trade expiry reference, resolver timer race, all R1 display/history/export paths, unknown/default coercions.
-- Batch 3: real replay and sufficient native input/runtime-parameter retention; single spec bump for price-axis occlusion rejection and `minConfidence` versioning.
-- Batch 4: lockfile/linter, Auto Test counters/cooldown/re-entry, Backtest timestamp/timeframe/provenance fixes, documentation/UI claim corrections, stable reason code coverage.
-- Real negative-control corpus remains incomplete.
-- Server/browser deterministic-verifier equivalence on real untouched acceptance frames is not claimed; with validation coverage incomplete the server fails closed and sends no image-bearing model request.
+- real non-M1 negative-control corpus;
+- untouched multi-session/multi-window acceptance coverage;
+- successful image-bearing server AI call under a fully validated acceptance state.
 
 ## Approval gate
 
-This branch has **not** been deployed or merged.
+This PR is **not merged and not deployed**.
 
-Next action requires explicit Batch 1 approval. Until then:
-
-- production remains unchanged;
-- AUDIT LOCK stays ON;
-- LAYOUT_VALIDATION_INCOMPLETE stays ON;
-- no Batch 2 work is started.
+Batch 2 must not begin until Batch 1 is explicitly approved.
