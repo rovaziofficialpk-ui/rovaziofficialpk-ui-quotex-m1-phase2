@@ -332,7 +332,7 @@ test('Batch 1 source guards keep upstream timeout, native-frame proof gate, size
   assert.match(server, /signal: controller\.signal/);
   assert.match(server, /GROQ_UPSTREAM_TIMEOUT_MS/);
   assert.match(server, /validateAnalyzeRequest\(await readJson\(req, ANALYZE_MAX_BODY_BYTES\)\)/);
-  assert.match(server, /decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES/);
+  assert.match(server, /if \(decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES\) \{/);
   assert.match(server, /verifyNativeFrame\(/);
   assert.match(server, /if \(!verification\.eligibleForModel\)/);
   assert.match(server, /fixedGroqPayload\(modelImage\)/);
@@ -344,4 +344,6 @@ test('Batch 1 source guards keep upstream timeout, native-frame proof gate, size
   assert.match(gate, /TIMEFRAME_TEMPLATE_THRESHOLD = 0\.985/);
   assert.match(gate, /CHARTTYPE_THRESHOLD = 0\.92/);
   assert.match(gate, /PRICE_AXIS_R2_MIN = 0\.995/);
+  assert.match(server, /return sendText\(res, 403, 'Forbidden'\)/);
+  assert.match(server, /return sendText\(res, 404, 'Not found'\)/);
 });
