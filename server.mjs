@@ -6,6 +6,20 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  ANALYZE_MAX_BODY_BYTES,
+  ANALYZE_MAX_IMAGE_BYTES,
+  GROQ_UPSTREAM_TIMEOUT_MS,
+  appendSerializedHashedRecord,
+  fixedGroqPayload,
+  malformedJsonError,
+  securityHeaders,
+  validateAnalyzeRequest,
+  validateAuditArtifactEnvelope,
+  validateDecisionRecord,
+  verifyHashChain,
+} from './server/batch1Security.mjs';
+import { buildModelPrimaryDataUrl, verifyNativeFrame } from './server/deterministicGate.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, 'dist');
@@ -26,34 +40,34 @@ await fs.mkdir(IMAGES_DIR, { recursive: true });
 function sendJson(res, status, value) {
   const body = JSON.stringify(value);
   res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
+    ...securityHeaders('application/json; charset=utf-8'),
     'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
   });
   res.end(body);
 }
 
 function sendText(res, status, body, contentType = 'text/plain; charset=utf-8') {
   res.writeHead(status, {
-    'Content-Type': contentType,
+    ...securityHeaders(contentType),
     'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
   });
   res.end(body);
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = MAX_BODY_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw Object.assign(new Error('Request body too large.'), { statusCode: 413 });
+    if (size > maxBytes) throw Object.assign(new Error('REQUEST_BODY_TOO_LARGE'), { statusCode: 413 });
     chunks.push(chunk);
   }
   const text = Buffer.concat(chunks).toString('utf8');
-  return JSON.parse(text || '{}');
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    throw malformedJsonError();
+  }
 }
 
 function safeEqual(a, b) {
@@ -97,26 +111,8 @@ function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
-async function lastHash(file) {
-  try {
-    const text = await fs.readFile(file, 'utf8');
-    const lines = text.trim().split('\n').filter(Boolean);
-    if (!lines.length) return null;
-    const last = JSON.parse(lines[lines.length - 1]);
-    return typeof last.recordHash === 'string' ? last.recordHash : null;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function appendHashedRecord(file, value) {
-  const previousRecordHash = await lastHash(file);
-  const base = { ...value, previousRecordHash };
-  const recordHash = sha256(Buffer.from(JSON.stringify(base)));
-  const finalRecord = { ...base, recordHash };
-  await fs.appendFile(file, JSON.stringify(finalRecord) + '\n', 'utf8');
-  return finalRecord;
+async function appendHashedRecord(file, value, options = {}) {
+  return appendSerializedHashedRecord(file, value, options);
 }
 
 async function readNdjson(file, maxRecords = 5000) {
@@ -135,11 +131,13 @@ async function appendAuditPayload(payload) {
   if (!payload || typeof payload !== 'object' || !payload.record || !Array.isArray(payload.artifacts)) {
     throw Object.assign(new Error('Expected { record, artifacts[] }.'), { statusCode: 400 });
   }
+  validateDecisionRecord(payload.record);
   const recordId = String(payload.record.recordId || '');
-  if (!recordId) throw Object.assign(new Error('recordId is required.'), { statusCode: 400 });
+  if (payload.artifacts.length > 32) throw Object.assign(new Error('TOO_MANY_AUDIT_ARTIFACTS'), { statusCode: 400 });
 
   const storedArtifacts = [];
   for (const artifact of payload.artifacts) {
+    validateAuditArtifactEnvelope(artifact);
     const { mimeType, bytes } = decodeDataUrl(artifact.dataUrl);
     const actualSha = sha256(bytes);
     if (artifact.sha256 && artifact.sha256 !== actualSha) {
@@ -168,9 +166,9 @@ async function appendAuditPayload(payload) {
 
   return appendHashedRecord(RECORDS_FILE, {
     ...payload.record,
+    durableWrite: 'ok',
     artifacts: storedArtifacts,
-    durableStoredAt: new Date().toISOString(),
-  });
+  }, { uniqueField: 'recordId' });
 }
 
 async function replayRecent(limit) {
@@ -262,16 +260,26 @@ function runTesseract(imageBytes, mode) {
 
 async function proxyGroq(payload) {
   if (!GROQ_API_KEY) throw Object.assign(new Error('GROQ_SERVER_KEY_NOT_CONFIGURED'), { statusCode: 503 });
-  const response = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await response.text();
-  return { status: response.status, contentType: response.headers.get('content-type') || 'application/json; charset=utf-8', text };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GROQ_UPSTREAM_TIMEOUT_MS);
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    return { status: response.status, contentType: response.headers.get('content-type') || 'application/json; charset=utf-8', text };
+  } catch (error) {
+    if (error?.name === 'AbortError') throw Object.assign(new Error('GROQ_UPSTREAM_TIMEOUT'), { statusCode: 504 });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const MIME = {
@@ -304,7 +312,7 @@ async function serveStatic(req, res) {
   try {
     const stat = await fs.stat(target);
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream',
+      ...securityHeaders(MIME[path.extname(target).toLowerCase()] || 'application/octet-stream'),
       'Content-Length': stat.size,
       'Cache-Control': path.basename(target) === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
     });
@@ -353,6 +361,11 @@ const server = createServer(async (req, res) => {
         return sendJson(res, 200, { ok: true, count: rows.length, allSame: rows.length > 0 && rows.every((row) => row.same), rows });
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/audit/verify') {
+        const result = await verifyHashChain(RECORDS_FILE);
+        return sendJson(res, result.valid ? 200 : 409, { ok: result.valid, ...result });
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/settings/log') {
         const body = await readJson(req);
         const entry = await appendHashedRecord(SETTINGS_FILE, {
@@ -376,8 +389,7 @@ const server = createServer(async (req, res) => {
         }
         const entry = await appendHashedRecord(OUTCOME_EVENTS_FILE, {
           ...body,
-          durableStoredAt: new Date().toISOString(),
-        });
+        }, { uniqueField: 'eventId' });
         return sendJson(res, 201, { ok: true, eventId, tradeId, recordHash: entry.recordHash });
       }
 
@@ -397,8 +409,31 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/groq/analyze') {
-        const payload = await readJson(req);
-        const result = await proxyGroq(payload);
+        const body = validateAnalyzeRequest(await readJson(req, ANALYZE_MAX_BODY_BYTES));
+        const decoded = decodeDataUrl(body.imageDataUrl);
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(decoded.mimeType)) {
+          return sendJson(res, 400, { ok: false, error: 'INVALID_NATIVE_FRAME_TYPE' });
+        }
+        if (decoded.bytes.length > ANALYZE_MAX_IMAGE_BYTES) {
+          return sendJson(res, 413, { ok: false, error: 'NATIVE_FRAME_TOO_LARGE' });
+        }
+        const verification = await verifyNativeFrame({
+          imageBytes: decoded.bytes,
+          configuredAsset: body.configuredAsset,
+          capturedAt: body.capturedAt,
+          runOcr: TESSERACT_AVAILABLE ? runTesseract : null,
+          templatesDir: path.join(DIST_DIR, 'templates'),
+        });
+        if (!verification.eligibleForModel) {
+          return sendJson(res, 422, {
+            ok: false,
+            error: 'DETERMINISTIC_GATE_REJECT',
+            reasonCode: verification.blockReason,
+            verification,
+          });
+        }
+        const modelImage = await buildModelPrimaryDataUrl(decoded.bytes, verification.rects.primary);
+        const result = await proxyGroq(fixedGroqPayload(modelImage));
         return sendText(res, result.status, result.text, result.contentType);
       }
 
