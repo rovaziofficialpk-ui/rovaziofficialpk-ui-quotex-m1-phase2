@@ -1,13 +1,16 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.4.2-phase4a2-audit-lock",
+  "version": "0.4.3-phase4a3-repro-input",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm test && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "audit:replay": "node scripts/replay-audit.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",

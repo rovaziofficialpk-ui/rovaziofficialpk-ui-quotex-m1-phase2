@@ -1,0 +1,25 @@
+{
+  "version": "input-pipeline-v1.0.0",
+  "auditLock": true,
+  "configuredTimeframe": "M1",
+  "layoutProfile": null,
+  "layoutStatus": "UNVERIFIED",
+  "productionCroppingEnabled": false,
+  "capture": {
+    "maxWidth": 2048,
+    "encoding": "image/jpeg",
+    "jpegQuality": 0.94
+  },
+  "ai": {
+    "model": "qwen/qwen3.8-27b",
+    "promptVersion": "vision-signal-v4.0.0",
+    "temperature": 0,
+    "seed": 424242,
+    "reasoningEffort": "none"
+  },
+  "notes": [
+    "Layout coordinates intentionally absent until calibrated on real Quotex frames.",
+    "Stage 1 records the current full-frame primary image exactly as sent to the model.",
+    "No outcome-derived tuning was used to select these settings."
+  ]
+}

@@ -3,6 +3,9 @@ import type { ImagePreflightResult } from './imagePreflight';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const GROQ_MODEL = 'qwen/qwen3.8-27b';
+export const GROQ_PROMPT_VERSION = 'vision-signal-v4.0.0';
+export const GROQ_TEMPERATURE = 0;
+export const GROQ_SEED = 424242;
 const REQUEST_TIMEOUT_MS = 45_000;
 
 export type ContextLabel = 'M5' | 'H1';
@@ -83,13 +86,22 @@ export function humanizeGroqError(error: unknown): string {
   return err.message || 'Unable to analyze the chart.';
 }
 
+export interface GroqAnalysisResult {
+  signal: TradeSignal;
+  responseTimeMs: number;
+  aiCallMs: number;
+  gatesMs: number;
+  rawApiResponseText: string;
+  systemFingerprint: string | null;
+}
+
 export async function analyzeChartWithGroq(args: {
   apiKey: string;
   image: string;
   minConfidence: number;
   preflight: ImagePreflightResult;
   contextImages?: ContextImage[];
-}): Promise<{ signal: TradeSignal; responseTimeMs: number }> {
+}): Promise<GroqAnalysisResult> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const startedAt = performance.now();
@@ -123,7 +135,8 @@ export async function analyzeChartWithGroq(args: {
           { role: 'user', content: userContent },
         ],
         reasoning_effort: 'none',
-        temperature: 0.15,
+        temperature: GROQ_TEMPERATURE,
+        seed: GROQ_SEED,
         max_tokens: 850,
         response_format: {
           type: 'json_schema',
@@ -140,12 +153,20 @@ export async function analyzeChartWithGroq(args: {
       throw new GroqRequestError(await readErrorMessage(response), response.status);
     }
 
-    const data = await response.json();
+    const rawApiResponseText = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(rawApiResponseText);
+    } catch {
+      throw new GroqRequestError('Groq returned invalid JSON.');
+    }
+    const aiCallFinishedAt = performance.now();
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       throw new GroqRequestError('AI returned an empty response. Please re-analyze the chart.');
     }
 
+    const gatesStartedAt = performance.now();
     const modelSignal = validateModelSignal(content);
     const signal = applySignalGate(
       modelSignal,
@@ -154,7 +175,15 @@ export async function analyzeChartWithGroq(args: {
       { score: args.preflight.score, status: args.preflight.status },
       contextImages.length,
     );
-    return { signal, responseTimeMs: Math.round(performance.now() - startedAt) };
+    const gatesFinishedAt = performance.now();
+    return {
+      signal,
+      responseTimeMs: Math.round(gatesFinishedAt - startedAt),
+      aiCallMs: Math.round(aiCallFinishedAt - startedAt),
+      gatesMs: Math.round(gatesFinishedAt - gatesStartedAt),
+      rawApiResponseText,
+      systemFingerprint: typeof data?.system_fingerprint === 'string' ? data.system_fingerprint : null,
+    };
   } finally {
     window.clearTimeout(timeout);
   }

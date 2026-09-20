@@ -3,6 +3,16 @@ export interface LiveTabInfo {
   displaySurface: string;
 }
 
+export interface CapturedLiveFrame {
+  dataUrl: string;
+  capturedAt: string;
+  captureMs: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+}
+
 const MAX_CAPTURE_WIDTH = 2048;
 
 export function isLiveTabCaptureSupported(): boolean {
@@ -81,7 +91,8 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
   });
 }
 
-export async function captureLiveTabFrame(stream: MediaStream): Promise<string> {
+export async function captureLiveTabFrameDetailed(stream: MediaStream): Promise<CapturedLiveFrame> {
+  const captureStartedAt = performance.now();
   if (!isLiveTabStreamActive(stream)) {
     throw new Error('Live tab sharing has stopped. Click “Add Live Tab” and select the chart tab again.');
   }
@@ -112,7 +123,17 @@ export async function captureLiveTabFrame(stream: MediaStream): Promise<string> 
     if (!context) throw new Error('Browser screenshot capture is unavailable.');
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.94);
+    const capturedAt = new Date().toISOString();
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
+    return {
+      dataUrl,
+      capturedAt,
+      captureMs: Math.round(performance.now() - captureStartedAt),
+      sourceWidth,
+      sourceHeight,
+      outputWidth: canvas.width,
+      outputHeight: canvas.height,
+    };
   } finally {
     video.pause();
     video.srcObject = null;
@@ -127,4 +148,9 @@ export function humanizeTabCaptureError(error: unknown): string {
     if (error.name === 'AbortError') return 'The tab-sharing request was cancelled.';
   }
   return error instanceof Error ? error.message : 'Could not start live tab sharing.';
+}
+
+
+export async function captureLiveTabFrame(stream: MediaStream): Promise<string> {
+  return (await captureLiveTabFrameDetailed(stream)).dataUrl;
 }

@@ -19,7 +19,19 @@ import {
   compareAutoFrames,
   type AutoFrameFingerprint,
 } from './services/autoTest';
-import { analyzeChartWithGroq, humanizeGroqError, testGroqConnection, type ContextImage, type ContextLabel } from './services/groq';
+import {
+  GROQ_MODEL,
+  GROQ_PROMPT_VERSION,
+  GROQ_SEED,
+  GROQ_TEMPERATURE,
+  analyzeChartWithGroq,
+  humanizeGroqError,
+  testGroqConnection,
+  type ContextImage,
+  type ContextLabel,
+} from './services/groq';
+import { buildFullFrameArtifact } from './services/auditArtifacts';
+import { newRecordId, persistReproDecision, type ReproDecisionRecord } from './services/reproAudit';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
 import { applyAuditEdgeGate } from './services/edgeGate';
 import { appendAuditSignal, createAuditSignalRecord, type AuditSignalSource } from './services/auditSignalLog';
@@ -32,6 +44,7 @@ import {
 import { clearApiKey, HISTORY_LIMIT, loadApiKey, loadHistory, loadSettings, saveApiKey, saveHistory, saveSettings } from './services/storage';
 import {
   captureLiveTabFrame,
+  captureLiveTabFrameDetailed,
   getLiveTabInfo,
   humanizeTabCaptureError,
   isLiveTabCaptureSupported,
@@ -205,7 +218,14 @@ function App() {
     }
   };
 
-  const captureFreshLiveFrame = async (): Promise<{ image: string; preflight: ImagePreflightResult; capturedAt: string }> => {
+  const captureFreshLiveFrame = async (): Promise<{
+    image: string;
+    preflight: ImagePreflightResult;
+    capturedAt: string;
+    captureMs: number;
+    preflightMs: number;
+    sourceFrameSize: { width: number; height: number };
+  }> => {
     const stream = liveStreamRef.current;
     if (!isLiveTabStreamActive(stream)) {
       throw new Error('Live tab sharing has stopped. Add the chart tab again before analysis.');
@@ -213,10 +233,18 @@ function App() {
 
     setLiveTabBusy(true);
     try {
-      const dataUrl = await captureLiveTabFrame(stream as MediaStream);
-      const capturedAt = new Date().toISOString();
-      const result = await inspectPrimaryFrame(dataUrl, 'live');
-      return { image: dataUrl, preflight: result, capturedAt };
+      const captured = await captureLiveTabFrameDetailed(stream as MediaStream);
+      const preflightStartedAt = performance.now();
+      const result = await inspectPrimaryFrame(captured.dataUrl, 'live');
+      const preflightMs = Math.round(performance.now() - preflightStartedAt);
+      return {
+        image: captured.dataUrl,
+        preflight: result,
+        capturedAt: captured.capturedAt,
+        captureMs: captured.captureMs,
+        preflightMs,
+        sourceFrameSize: { width: captured.sourceWidth, height: captured.sourceHeight },
+      };
     } finally {
       setLiveTabBusy(false);
     }
@@ -321,7 +349,12 @@ function App() {
   const executeAiAnalysis = async (
     analysisImage: string,
     analysisPreflight: ImagePreflightResult,
-    capturedAt: string | null = null,
+    auditMeta: {
+      capturedAt: string | null;
+      captureMs: number | null;
+      preflightMs: number | null;
+      sourceFrameSize: { width: number; height: number } | null;
+    } = { capturedAt: null, captureMs: null, preflightMs: null, sourceFrameSize: null },
   ): Promise<TradeSignal> => {
     const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
       .filter((label) => Boolean(contextImages[label]))
@@ -335,7 +368,9 @@ function App() {
       contextImages: extraImages,
     });
     const researchFilteredSignal = applyPrecisionProfile(result.signal, precisionProfile);
+    const auditGateStartedAt = performance.now();
     const gatedSignal = applyAuditEdgeGate(researchFilteredSignal);
+    const auditGateMs = Math.round(performance.now() - auditGateStartedAt);
     const decisionAt = new Date().toISOString();
     setSignal(gatedSignal);
     setResponseTime(result.responseTimeMs);
@@ -350,7 +385,7 @@ function App() {
     void appendAuditSignal(createAuditSignalRecord({
       signal: gatedSignal,
       source,
-      capturedAt,
+      capturedAt: auditMeta.capturedAt,
       decisionAt,
       entryPrice: null,
       entryTimestamp: null,
@@ -361,6 +396,72 @@ function App() {
       feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
       rawDataRef: null,
     })).catch(() => undefined);
+
+    try {
+      const primaryArtifact = await buildFullFrameArtifact(
+        'primary',
+        analysisImage,
+        auditMeta.capturedAt,
+        auditMeta.sourceFrameSize,
+      );
+      const contextArtifacts = await Promise.all(extraImages.map((contextImage) => (
+        buildFullFrameArtifact(`context_${contextImage.label}`, contextImage.image, null, null)
+      )));
+      const capturedMs = auditMeta.capturedAt ? Date.parse(auditMeta.capturedAt) : Number.NaN;
+      const decisionMs = Date.parse(decisionAt);
+      const totalCaptureToDecision = Number.isFinite(capturedMs) && Number.isFinite(decisionMs)
+        ? Math.max(0, decisionMs - capturedMs)
+        : null;
+
+      const reproRecord: ReproDecisionRecord = {
+        schemaVersion: 'decision-record-v1',
+        recordId: newRecordId(),
+        configVersion: 'input-pipeline-v1.0.0',
+        promptVersion: GROQ_PROMPT_VERSION,
+        modelName: GROQ_MODEL,
+        temperature: GROQ_TEMPERATURE,
+        seed: GROQ_SEED,
+        seedReason: 'Fixed before outcome analysis for best-effort reproducibility; Groq does not guarantee determinism.',
+        systemFingerprint: result.systemFingerprint,
+        capturedAt: auditMeta.capturedAt,
+        decisionAt,
+        source,
+        configuredTimeframe: 'M1',
+        layoutProfileVersion: null,
+        layoutReason: 'UNVERIFIED_LAYOUT: current production input is the full shared/uploaded frame; no calibrated crop profile has been activated.',
+        rawModelResponseText: result.rawApiResponseText,
+        preflight: analysisPreflight,
+        gateSnapshot: {
+          modelProposedBias: result.signal.proposedBias,
+          preAuditBias: researchFilteredSignal.bias,
+          finalBias: 'NEUTRAL',
+          finalReason: gatedSignal.gateReason || 'AUDIT_LOCK',
+        },
+        timingsMs: {
+          capture: auditMeta.captureMs,
+          preflight: auditMeta.preflightMs,
+          aiCall: result.aiCallMs,
+          gates: result.gatesMs + auditGateMs,
+          totalCaptureToDecision,
+        },
+        nullReasons: {
+          entryPrice: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
+          payout: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
+          expiry: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
+          deterministicTimeframe: 'LAYOUT_UNVERIFIED_STAGE2_STOP',
+          deterministicAsset: 'LAYOUT_UNVERIFIED_STAGE2_STOP',
+        },
+        durableWrite: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      const durable = await persistReproDecision(reproRecord, [primaryArtifact, ...contextArtifacts]);
+      if (!durable.durable) {
+        setError('Audit warning: decision remained NEUTRAL, but durable server audit storage failed. A local append-only copy was retained.');
+      }
+    } catch (auditError) {
+      setError(`Audit warning: decision remained NEUTRAL, but reproducibility logging failed: ${auditError instanceof Error ? auditError.message : 'unknown error'}`);
+    }
 
     return gatedSignal;
   };
@@ -427,8 +528,8 @@ function App() {
     setAutoStats((current) => ({ ...current, status: 'capturing' }));
 
     try {
-      const frame = await captureLiveTabFrame(stream as MediaStream);
-      const capturedAt = new Date().toISOString();
+      const captured = await captureLiveTabFrameDetailed(stream as MediaStream);
+      const frame = captured.dataUrl;
       const fingerprint = await buildAutoFrameFingerprint(frame);
       const baseline = autoBaselineRef.current;
       const change = baseline
@@ -464,7 +565,9 @@ function App() {
       setAnalysisStage('preflight');
       setPreflightLoading(true);
       setAutoStats((current) => ({ ...current, status: 'preflight' }));
+      const preflightStartedAt = performance.now();
       const quality = await inspectPrimaryFrame(frame, 'live');
+      const preflightMs = Math.round(performance.now() - preflightStartedAt);
 
       if (quality.status === 'block') {
         autoBaselineRef.current = fingerprint;
@@ -479,7 +582,12 @@ function App() {
       setAnalysisStage('ai');
       setAutoStats((current) => ({ ...current, status: 'analyzing' }));
       autoLastAiAtRef.current = Date.now();
-      const resultSignal = await executeAiAnalysis(frame, quality, capturedAt);
+      const resultSignal = await executeAiAnalysis(frame, quality, {
+        capturedAt: captured.capturedAt,
+        captureMs: captured.captureMs,
+        preflightMs,
+        sourceFrameSize: { width: captured.sourceWidth, height: captured.sourceHeight },
+      });
       setError('');
       autoBaselineRef.current = fingerprint;
       autoConsecutiveErrorsRef.current = 0;
@@ -545,7 +653,12 @@ function App() {
     try {
       let analysisImage = image;
       let analysisPreflight = preflight;
-      let capturedAt: string | null = null;
+      let auditMeta = {
+        capturedAt: null as string | null,
+        captureMs: null as number | null,
+        preflightMs: null as number | null,
+        sourceFrameSize: null as { width: number; height: number } | null,
+      };
 
       if (liveTabActive) {
         setAnalysisStage('capturing');
@@ -553,7 +666,16 @@ function App() {
         const freshFrame = await captureFreshLiveFrame();
         analysisImage = freshFrame.image;
         analysisPreflight = freshFrame.preflight;
-        capturedAt = freshFrame.capturedAt;
+        auditMeta = {
+          capturedAt: freshFrame.capturedAt,
+          captureMs: freshFrame.captureMs,
+          preflightMs: freshFrame.preflightMs,
+          sourceFrameSize: freshFrame.sourceFrameSize,
+        };
+      } else if (analysisImage) {
+        const preflightStartedAt = performance.now();
+        analysisPreflight = await analyzeImagePreflight(analysisImage);
+        auditMeta.preflightMs = Math.round(performance.now() - preflightStartedAt);
       }
 
       setAnalysisStage('preflight');
@@ -566,7 +688,7 @@ function App() {
       }
 
       setAnalysisStage('ai');
-      await executeAiAnalysis(analysisImage, analysisPreflight, capturedAt);
+      await executeAiAnalysis(analysisImage, analysisPreflight, auditMeta);
     } catch (err) {
       setError(humanizeGroqError(err));
     } finally {
@@ -808,7 +930,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.2 • Quant audit lock • Immutable signal logging • NEUTRAL until proven</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.3 • Reproducible input records • AUDIT LOCK ON • NEUTRAL until proven</div></footer>
     </div>
   );
 }
