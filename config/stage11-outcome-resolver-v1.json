@@ -1,0 +1,62 @@
+{
+  "version": "stage11-outcome-resolver-v1.0.0",
+  "auditLock": true,
+  "tradePlacementEnabled": false,
+  "settlementRule": {
+    "status": "DOCUMENTED_VERIFIED",
+    "sourceDocuments": [
+      {
+        "title": "Quotex Rules of Trading operations",
+        "url": "https://quotex.com/documents/en/Rules_of_Trading_operations_QTX.pdf",
+        "clauses": [
+          "2.4",
+          "3.4",
+          "5.3",
+          "5.4.1",
+          "5.4.2",
+          "5.5"
+        ]
+      },
+      {
+        "title": "Quotex FAQ",
+        "url": "https://qxbroker.com/faq",
+        "sections": [
+          "What is the expiration period of a trade?",
+          "What are the possible results of the placed trades?"
+        ]
+      }
+    ],
+    "entryReference": "contract purchase/target price; company-server quote at request receipt per trading rules",
+    "expiryReference": "current market price fixed by platform at expiration",
+    "callWin": "expiry > entry/target",
+    "putWin": "expiry < entry/target",
+    "tie": "expiry == entry/target => trade amount returned",
+    "expirySeconds": 60
+  },
+  "screenResolver": {
+    "validationStatus": "PENDING_30_MANUAL_DEMO_TRADES",
+    "warning": "Quotex states terminal charts are advisory and do not establish execution price. Screen-derived current price must be validated against manually placed demo results.",
+    "currentPrice": {
+      "source": "current-price tag OCR + price-axis linear fit",
+      "ocrMinimumConfidence": 70,
+      "maximumAxisResidualFractionOfMedianPriceStep": 0.2,
+      "unreadable": "null"
+    },
+    "payout": {
+      "source": "asset card at decision time",
+      "breakevenFormula": "1/(1+payout)",
+      "unreadable": "null"
+    },
+    "outcomeNullPolicy": "Never guess. A missing entry price, expiry price, verified 60-second expiry, or payout produces outcome=null.",
+    "tieTolerance": "none; exact parsed displayed price equality only"
+  },
+  "validation": {
+    "requiredManualDemoTrades": 30,
+    "compareAgainst": "manual platform WIN/LOSS/TIE label",
+    "reportAgreement": true,
+    "listEveryDisagreement": true,
+    "reportNullRate": true,
+    "selectionBiasWarningRequiredWhenNullRateAboveZero": true,
+    "autoUnlock": false
+  }
+}

@@ -12,6 +12,7 @@ const DIST_DIR = path.join(__dirname, 'dist');
 const DATA_ROOT = process.env.AUDIT_DATA_DIR || '/data/audit';
 const RECORDS_FILE = path.join(DATA_ROOT, 'records.ndjson');
 const SETTINGS_FILE = path.join(DATA_ROOT, 'settings.ndjson');
+const OUTCOME_EVENTS_FILE = path.join(DATA_ROOT, 'outcome-events.ndjson');
 const IMAGES_DIR = path.join(DATA_ROOT, 'images');
 const PORT = Number(process.env.PORT || 3000);
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -117,6 +118,18 @@ async function appendHashedRecord(file, value) {
   await fs.appendFile(file, JSON.stringify(finalRecord) + '\n', 'utf8');
   return finalRecord;
 }
+
+async function readNdjson(file, maxRecords = 5000) {
+  try {
+    const text = await fs.readFile(file, 'utf8');
+    const rows = text.split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    return rows.slice(-Math.max(1, maxRecords));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 
 async function appendAuditPayload(payload) {
   if (!payload || typeof payload !== 'object' || !payload.record || !Array.isArray(payload.artifacts)) {
@@ -352,6 +365,27 @@ const server = createServer(async (req, res) => {
         });
         return sendJson(res, 201, { ok: true, recordHash: entry.recordHash });
       }
+
+      if (req.method === 'POST' && url.pathname === '/api/outcomes/events') {
+        const body = await readJson(req);
+        const eventId = typeof body.eventId === 'string' ? body.eventId : '';
+        const tradeId = typeof body.tradeId === 'string' ? body.tradeId : '';
+        const eventType = typeof body.eventType === 'string' ? body.eventType : '';
+        if (!eventId || !tradeId || !['ARMED', 'EXPIRED', 'MANUAL_OUTCOME'].includes(eventType)) {
+          return sendJson(res, 400, { ok: false, error: 'INVALID_OUTCOME_EVENT' });
+        }
+        const entry = await appendHashedRecord(OUTCOME_EVENTS_FILE, {
+          ...body,
+          durableStoredAt: new Date().toISOString(),
+        });
+        return sendJson(res, 201, { ok: true, eventId, tradeId, recordHash: entry.recordHash });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/outcomes/events') {
+        const events = await readNdjson(OUTCOME_EVENTS_FILE, 5000);
+        return sendJson(res, 200, { ok: true, count: events.length, events });
+      }
+
 
       if (req.method === 'POST' && url.pathname === '/api/ocr') {
         if (!TESSERACT_AVAILABLE) return sendJson(res, 503, { ok: false, error: 'OCR_ENGINE_NOT_AVAILABLE' });

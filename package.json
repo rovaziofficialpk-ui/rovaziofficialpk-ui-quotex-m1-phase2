@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.4.8-phase4a8-sharp-capture",
+  "version": "0.5.0-stage11-outcome-resolver",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "test": "node --test tests/*.test.mjs",
     "audit:replay": "node scripts/replay-audit.mjs",
     "stage3c:validate": "node scripts/stage3c-validation-summary.mjs",
-    "stage3d:validate": "node scripts/stage3d-validation-summary.mjs"
+    "stage3d:validate": "node scripts/stage3d-validation-summary.mjs",
+    "stage11:summary": "node scripts/stage11-outcome-summary.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",

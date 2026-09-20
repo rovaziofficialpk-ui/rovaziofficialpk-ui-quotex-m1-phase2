@@ -10,6 +10,7 @@ import { LiveStreamPreview } from './components/LiveStreamPreview';
 import { LiveTabPanel } from './components/LiveTabPanel';
 import { SignalCard } from './components/SignalCard';
 import { UploadPanel } from './components/UploadPanel';
+import { OutcomeResolverPanel } from './components/OutcomeResolverPanel';
 import {
   AUTO_AI_COOLDOWN_MS,
   AUTO_CAPTURE_INTERVAL_SECONDS,
@@ -30,9 +31,10 @@ import {
   type ContextImage,
   type ContextLabel,
 } from './services/groq';
-import { buildAuditArtifact, buildPrivacyMaskedSourceArtifact } from './services/auditArtifacts';
+import { buildAuditArtifact, buildPrivacyMaskedSourceArtifact, sha256DataUrl } from './services/auditArtifacts';
 import { clearAuditToken, getServerHealth, loadAuditToken, saveAuditToken, verifyAuditAuth, logSettingChange, type ServerHealth } from './services/apiClient';
 import { verifyStage3CFrame } from './services/screenStage3C';
+import { buildResolverSnapshot, type ResolverSnapshot } from './services/outcomeResolver';
 import {
   INPUT_PIPELINE_CONFIG_VERSION,
   LAYOUT_PROFILE_VERSION,
@@ -425,6 +427,38 @@ function App() {
       setTestState('error');
       setError(humanizeGroqError(err));
     }
+  };
+
+  const captureOutcomeResolverSnapshot = async (): Promise<ResolverSnapshot> => {
+    const stream = liveStreamRef.current;
+    if (!authVerified) throw new Error('Authenticate the secure audit session first.');
+    if (!configuredAsset.trim()) throw new Error('Configure the exact asset before recording a demo outcome.');
+    if (!isLiveTabStreamActive(stream)) throw new Error('Share the live Quotex tab before using the outcome resolver.');
+
+    const captured = await captureLiveTabFrameDetailed(stream as MediaStream);
+    const sourceHash = await sha256DataUrl(captured.dataUrl);
+    const deterministic = await inspectAndCropSingleFrame(captured.dataUrl, configuredAsset.trim());
+
+    const verification = await verifyStage3CFrame({
+      crops: deterministic.crops,
+      metrics: deterministic.metrics,
+      configuredAsset: configuredAsset.trim(),
+      previousClock: lastPlatformClockRef.current,
+    });
+
+    if (verification.platformClock.utcSecondsOfDay !== null) {
+      lastPlatformClockRef.current = {
+        secondsOfDay: verification.platformClock.utcSecondsOfDay,
+        observedClientMs: Date.now(),
+      };
+    }
+
+    return buildResolverSnapshot({
+      crops: deterministic.crops,
+      verification,
+      capturedAt: captured.capturedAt,
+      sourceFrameSha256: sourceHash.sha256,
+    });
   };
 
   const executeAiAnalysis = async (
@@ -1098,6 +1132,12 @@ function App() {
 
                 <ImagePreflightPanel result={preflight} loading={preflightLoading} />
 
+                <OutcomeResolverPanel
+                  liveTabActive={liveTabActive}
+                  authenticated={authVerified}
+                  captureSnapshot={captureOutcomeResolverSnapshot}
+                />
+
                 <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-2.5">
                   <div className="mb-1.5 flex items-center justify-between">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Min confidence</label>
@@ -1213,7 +1253,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="mx-auto max-w-[1480px] px-4 text-center text-[10px] text-slate-600">Phase 4A.6 • Stage 3C chart/axis/clock/payout verifier • acceptance lock ON • AUDIT LOCK ON</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="mx-auto max-w-[1480px] px-4 text-center text-[10px] text-slate-600">Stage 11 • documented settlement resolver • 30-demo agreement validation pending • AUDIT LOCK ON</div></footer>
     </div>
   );
 }

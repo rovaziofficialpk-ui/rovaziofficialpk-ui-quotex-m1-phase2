@@ -324,7 +324,7 @@ export function BacktestPanel({ apiKey, minConfidence, activePrecisionProfile, o
               <Metric label="Neutral" value={String(summary.neutral)} />
               <Metric label="Wins" value={String(summary.wins)} tone="text-green-400" />
               <Metric label="Losses" value={String(summary.losses)} tone="text-red-400" />
-              <Metric label="Win rate" value={summary.winRate === null ? '—' : `${summary.winRate}%`} tone="text-cyan-300" />
+              <Metric label="Proxy win rate" value={summary.winRate === null ? '—' : `${summary.winRate}%`} tone="text-cyan-300" />
               <Metric label="Coverage" value={`${summary.coverage}%`} />
             </div>
 
@@ -458,7 +458,10 @@ export function BacktestPanel({ apiKey, minConfidence, activePrecisionProfile, o
               )}
             </div>
 
-            <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-2 text-[9px] leading-relaxed text-yellow-200/70">
+            <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 p-2 text-[9px] leading-relaxed text-red-200/80">
+              <span className="font-black">Stage 11 settlement warning:</span> historical WIN/LOSS here still uses the next-candle-close research proxy. It is NOT Quotex settlement. Official fixed-time settlement compares the contract purchase/target price with the market price fixed by the platform at expiration; an equal price returns the trade amount. Use the Demo Outcome Resolver for settlement-agreement validation.
+            </div>
+            <div className="mt-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-2 text-[9px] leading-relaxed text-yellow-200/70">
               For normal forex, third-party M1 candles are a benchmark and may not match Quotex tick-for-tick. For OTC, use actual captured/exported OTC candle data; ordinary forex history is not treated as OTC history.
             </div>
           </main>

@@ -50,6 +50,7 @@ export interface BacktestRow {
   expiryClose: number;
   actualDirection: ActualDirection;
   outcome: BacktestOutcome;
+  outcomeModel: 'NEXT_CANDLE_CLOSE_RESEARCH_PROXY';
   responseTimeMs: number;
 }
 
@@ -470,6 +471,7 @@ export function createBacktestRow(args: {
     expiryClose: args.expiry.close,
     actualDirection,
     outcome,
+    outcomeModel: 'NEXT_CANDLE_CLOSE_RESEARCH_PROXY',
     responseTimeMs: args.responseTimeMs,
   };
 }
@@ -551,7 +553,7 @@ export function exportBacktestCsv(rows: BacktestRow[]): void {
     'timeLabel', 'pair', 'market', 'bias', 'proposedBias', 'confidence', 'confirmationCount',
     'opposingConfirmations', 'chartQuality', 'inputQualityScore', 'inputQualityStatus', 'warningCount',
     'trend', 'momentum', 'structure', 'candleSignal', 'pattern', 'decisionClose', 'expiryClose',
-    'actualDirection', 'outcome', 'gateReason', 'responseTimeMs',
+    'actualDirection', 'outcome', 'outcomeModel', 'gateReason', 'responseTimeMs',
   ];
   const csv = [
     headers.map(csvCell).join(','),
