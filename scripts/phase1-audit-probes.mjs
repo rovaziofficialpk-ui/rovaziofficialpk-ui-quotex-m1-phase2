@@ -290,4 +290,39 @@ findings.push({
   evidence: 'POST /api/audit/records requires only recordId plus artifacts[]. The remaining audit record is caller-supplied and is not server-validated against the frozen decision schema/provenance.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v4', findings }, null, 2));
+
+findings.push({
+  id:'SPEC-MIN-CONFIDENCE-MUTABLE-WITHOUT-BUMP',
+  status: /logSettingChange\('minConfidence',[\s\S]*?INPUT_PIPELINE_CONFIG_VERSION\);[\s\S]*?setMinConfidence\(value\)/.test(files.app)
+    ? 'CONFIRMED_SPEC_HYGIENE_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'The live minimum-confidence threshold is user-mutable and logged under the existing config version. No new spec ID/config version is created and no acceptance sessions are invalidated.',
+});
+
+findings.push({
+  id:'OUTCOME-SNAPSHOT-IGNORES-STRUCTURAL-GATE',
+  status: /const deterministic = await inspectAndCropSingleFrame[\s\S]*?const verification = await verifyStage3CFrame[\s\S]*?return buildResolverSnapshot/.test(files.app)
+    && !/captureOutcomeResolverSnapshot[\s\S]*?if \(!deterministic\.safeForAi\)/.test(files.app)
+    ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
+    : 'UNVERIFIED',
+  evidence: 'Outcome snapshot capture computes the structural deterministic result but does not require deterministic.safeForAi before building a resolver snapshot. Structural failures are not merged into verification.reasons.',
+});
+
+findings.push({
+  id:'OUTCOME-RESOLVE-IGNORES-ASSET-AND-FRAME-REASONS',
+  status: /export function resolveOutcome/.test(files.outcomeResolverSource)
+    && !/args\.entry\.asset[^\n]*args\.expiry\.asset|frameReasons\.length/.test((files.outcomeResolverSource.match(/export function resolveOutcome[\s\S]*?\n\}/)||[''])[0])
+    ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
+    : 'UNVERIFIED',
+  evidence: 'resolveOutcome checks expiry duration, entry/expiry prices and payout, but does not require matching entry/expiry asset or empty frameReasons. A readable wrong-asset/stale/otherwise-invalid snapshot can still resolve WIN/LOSS/TIE.',
+});
+
+findings.push({
+  id:'REPLAY-CLI-CONSTANT-NEUTRAL',
+  status: fs.readFileSync('scripts/replay-audit.mjs','utf8').includes("const replayed = stored.preAuditBias === 'NEUTRAL' ? 'NEUTRAL' : 'NEUTRAL'")
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'The CLI replay script also reduces every stored decision to NEUTRAL instead of recomputing the deterministic pipeline.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v5', findings }, null, 2));
