@@ -9,6 +9,7 @@ const screenFields = await import('../src/services/screenFieldVerification.ts');
 const outcomeResolver = await import('../src/services/outcomeResolver.ts');
 const precisionOptimizer = await import('../src/services/precisionOptimizer.ts');
 const backtest = await import('../src/services/backtest.ts');
+const storage = await import('../src/services/storage.ts');
 
 function modelPayload(overrides = {}) {
   return {
@@ -552,4 +553,61 @@ test('backtest ISO timestamps with fractional seconds are corrupted by dot repla
   assert.equal(parsed.hasRealTimestamps, false);
   assert.equal(parsed.timeframeStatus, 'unknown');
   assert.equal(parsed.medianIntervalSeconds, null);
+});
+
+
+test('R1 persisted local history accepts directional CALL without audit-lock sanitization', () => {
+  const oldWindow = globalThis.window;
+  globalThis.window = {
+    localStorage: {
+      getItem(key) {
+        if (key !== 'quotex_m1_history_v2') return null;
+        return JSON.stringify([{
+          id:'legacy-call',
+          createdAt:'2026-09-20T00:00:00.000Z',
+          pair:'EUR/USD',
+          bias:'CALL',
+          proposedBias:'CALL',
+          confidence:99,
+          pattern:'legacy',
+          entry:'legacy',
+          chartQuality:'clear',
+          timeframe:'M1',
+          trend:'bullish',
+          momentum:'bullish',
+          structure:'bullish',
+          candleSignal:'bullish',
+          supportResistance:'x',
+          evidence:[],
+          contextAlignment:'not_provided',
+          contextNotes:'',
+          warnings:[],
+          confirmationScore:100,
+          confirmationCount:4,
+          opposingConfirmations:0,
+          inputQualityScore:100,
+          inputQualityStatus:'pass',
+          contextImagesUsed:0,
+          gateReason:'',
+          responseTimeMs:1,
+          minConfidence:70,
+        }]);
+      },
+      setItem() {},
+      removeItem() {},
+    },
+  };
+  try {
+    const history = storage.loadHistory();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].bias, 'CALL');
+  } finally {
+    if (oldWindow === undefined) delete globalThis.window;
+    else globalThis.window = oldWindow;
+  }
+});
+
+test('HistoryPanel source renders persisted item.bias directly', () => {
+  const src = fs.readFileSync(new URL('../src/components/HistoryPanel.tsx', import.meta.url), 'utf8');
+  assert.match(src, />\{item\.bias\}<\/span>/);
 });
