@@ -299,14 +299,21 @@ findings.push({
   evidence: 'The live minimum-confidence threshold is user-mutable and logged under the existing config version. No new spec ID/config version is created and no acceptance sessions are invalidated.',
 });
 
-findings.push({
-  id:'OUTCOME-SNAPSHOT-IGNORES-STRUCTURAL-GATE',
-  status: /const deterministic = await inspectAndCropSingleFrame[\s\S]*?const verification = await verifyStage3CFrame[\s\S]*?return buildResolverSnapshot/.test(files.app)
-    && !/captureOutcomeResolverSnapshot[\s\S]*?if \(!deterministic\.safeForAi\)/.test(files.app)
-    ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
-    : 'UNVERIFIED',
-  evidence: 'Outcome snapshot capture computes the structural deterministic result but does not require deterministic.safeForAi before building a resolver snapshot. Structural failures are not merged into verification.reasons.',
-});
+{
+  const start = files.app.indexOf('const captureOutcomeResolverSnapshot');
+  const end = files.app.indexOf('const executeAiAnalysis', start);
+  const outcomeSnapshotFn = start >= 0 && end > start ? files.app.slice(start, end) : '';
+  findings.push({
+    id:'OUTCOME-SNAPSHOT-IGNORES-STRUCTURAL-GATE',
+    status: /const deterministic = await inspectAndCropSingleFrame/.test(outcomeSnapshotFn)
+      && /verifyStage3CFrame\(\{/.test(outcomeSnapshotFn)
+      && /return buildResolverSnapshot\(/.test(outcomeSnapshotFn)
+      && !/if\s*\(\s*!?deterministic\.safeForAi/.test(outcomeSnapshotFn)
+      ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
+      : 'UNVERIFIED',
+    evidence: 'Outcome snapshot capture computes the structural deterministic result but does not require deterministic.safeForAi before building a resolver snapshot. Structural failures are not merged into verification.reasons.',
+  });
+}
 
 findings.push({
   id:'OUTCOME-RESOLVE-IGNORES-ASSET-AND-FRAME-REASONS',
@@ -325,4 +332,4 @@ findings.push({
   evidence: 'The CLI replay script also reduces every stored decision to NEUTRAL instead of recomputing the deterministic pipeline.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v5', findings }, null, 2));
+console.log(JSON.stringify({ probeVersion:'phase1-v6', findings }, null, 2));
