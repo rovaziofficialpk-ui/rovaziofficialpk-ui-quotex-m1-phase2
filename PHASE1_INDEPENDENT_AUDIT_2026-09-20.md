@@ -97,7 +97,7 @@ Fresh audit CI on Node 24:
 - repository has no tracked `package-lock.json`
 - `npm install`: succeeded
 - baseline tests: 57/57 passed
-- Phase 1 direct production-module tests: 10/10 passed
+- Phase 1 direct production-module tests: 18/18 passed
 - `tsc --noEmit`: passed; tsconfig strict mode is enabled
 - production Vite build: passed
 - linter: **NOT CONFIGURED**
@@ -109,12 +109,12 @@ Build reproducibility:
 
 Coverage:
 - Existing suite reported 100% with no production-file rows; that number is not evidence of production coverage.
-- Direct production-module audit coverage: 49.90% lines, 64.71% branches, 40.74% functions across the imported production modules.
+- Direct production-module audit coverage: 52.89% lines, 76.56% branches, 53.69% functions across the imported production modules.
   - edgeGate.ts: 100% lines
-  - outcomeResolver.ts: 34.98% lines
-  - screenFieldVerification.ts: 32.32% lines
+  - outcomeResolver.ts: 42.60% lines
+  - screenFieldVerification.ts: 32.68% lines
   - screenPipeline.ts: 41.12% lines
-  - signalLogic.ts: 85.20% lines
+  - signalLogic.ts: 91.03% lines
   - apiClient.ts: 37.50% lines
 - This is still not whole-app coverage; DOM-heavy App/Backtest/server integration remains under-covered.
 
@@ -354,9 +354,9 @@ Audit branch: `audit/phase1-e2e-20260920`
 PR: #1, deliberately not merged.
 
 Latest complete audit workflow evidence:
-- workflow conclusion: SUCCESS on audit branch head `eee793563b8da4d4d4dbfba1ff06f23e3661613c`
+- workflow conclusion: SUCCESS on audit branch head `f9d9738b61322b4474b1e3f6b3d519b4f3fff3ec`
 - baseline 57/57 pass
-- direct production-runtime audit tests 16/16 pass
+- direct production-runtime audit tests 18/18 pass
 - strict TypeScript pass
 - production build pass
 - mutation sample 26/26 detected, 0 sampled mutants undetected
@@ -366,21 +366,98 @@ Latest complete audit workflow evidence:
 - lockfile missing from repository
 - production-module coverage 52.89% lines / 76.56% branches / 53.69% functions for imported modules
 
+
+## Additional Phase 1 findings confirmed after the initial report
+
+### HIGH — durable audit endpoint accepts forged and duplicate decision records
+The local server integration test posted a fabricated `/api/audit/records` record that had not come from the deterministic pipeline. The server returned 201. A second record with the **same recordId** was also accepted with 201.
+
+Evidence:
+- `fakeReplayRecordStored: true`
+- `duplicateAuditRecordIdAccepted: true`
+- replay then returned both records and marked both as matching because replay is constant-NEUTRAL.
+
+The server validates `recordId` and artifact hashes but does not validate the decision-record schema, config/spec provenance, deterministic checks, gate snapshot, model/prompt settings, or uniqueness of recordId. Therefore the durable audit file is append-only storage, not an authoritative proof source.
+
+### HIGH — Stage 11 screen resolver does not observe the documented contract target price
+The documented Quotex settlement rule compares the expiration market price with the contract purchase/target price. The current screen resolver instead OCRs the **chart current-price tag** from a frame captured when the user presses the resolver button.
+
+That chart tag may be useful validation evidence, but it is not the contract target price actually fixed for the manually placed trade. The screen method therefore remains experimentally unverified even though the settlement rule itself is documented.
+
+### HIGH — Stage 11 expiry capture time is derived from resolver capture, not platform contract expiry
+`makeArmedEvent` computes:
+
+`dueAt = entry.capturedAt + 60 seconds`
+
+It does not read a contract expiration timestamp from Quotex. Manual trade placement and the resolver's entry capture are not proven simultaneous. A delay between them shifts the expiry observation relative to the actual contract expiry.
+
+### MEDIUM — ambiguous expiry crop can pass as verified 60 seconds
+`readExpiryDuration` succeeds when `oneMinute.length === 1` even if additional non-60-second duration candidates are visible. Thus a crop containing one `00:01:00` token plus another conflicting duration can still return `verifiedOneMinute=true`.
+
+This is a fail-open inside the **outcome resolver**, not the trade-signal gate.
+
+### MEDIUM — clock staleness includes OCR/network processing delay
+The platform clock text belongs to the captured image, but `verifyPlatformClock` runs OCR first and then fetches server time. It is not passed the frame's `capturedAt` timestamp. Consequently `serverDeltaSeconds` includes time spent on OCR and the subsequent server request.
+
+Near the frozen 5-second staleness boundary this can falsely reject a valid captured clock. This is fail-closed, but it weakens R3 valid-input pass behavior. Correcting the reference-time rule would be a spec/rule change.
+
+### MEDIUM — capture diagnostics mix target-video and analyzer-window geometry
+`videoWidth/videoHeight` are measurements of the selected shared surface. However:
+- `devicePixelRatio` comes from the analyzer app window;
+- `cssViewportWidth/Height` come from the analyzer app window;
+- `capturePixelsPerCssPixel` divides shared-target video pixels by analyzer-window CSS pixels.
+
+When the selected Quotex tab/window differs from the analyzer tab, these values do **not** establish the target tab's DPR or browser zoom. The historical/current target DPR therefore remains unverified.
+
+### MEDIUM — capture surface is not restricted to a browser tab
+The browser picker result's `displaySurface` is recorded but not enforced. A user may share a browser tab, window, or monitor depending on browser picker options. The deterministic layout may subsequently reject the wrong view, but the capture layer does not emit a specific `WRONG_CAPTURE_SURFACE` reason.
+
+### MEDIUM — live-but-muted capture is not specifically detected
+`isLiveTabStreamActive` checks `readyState === 'live'` and `track.enabled`, but not `track.muted`. A source can therefore remain structurally "live" while no fresh frames are arriving. In Auto Test, an unchanged frozen image is treated as a low-change skip rather than a durable `FROZEN_FRAME` failure.
+
+### MEDIUM — malformed JSON is reported as server 500
+A local integration request containing malformed JSON to an authenticated API route returned HTTP 500 with the JSON parse exception. This is fail-closed, but a malformed client request is a 4xx input error, not a server fault, and does not meet the "specific reason" quality target.
+
+### LOW / defense-in-depth — static response security headers are absent
+The local production server implementation returned no:
+- Content-Security-Policy
+- X-Frame-Options
+- Permissions-Policy
+- Referrer-Policy
+- X-Content-Type-Options
+
+for the static app response. This did not produce a demonstrated signal-gate bypass, but it weakens browser hardening. The audit token lives in sessionStorage and therefore depends on page-origin script integrity.
+
+### CONFIRMED — API authentication itself fails closed
+Local server integration verified:
+- unauthenticated `/api/auth/check` -> 401
+- unauthenticated `/api/time` -> 401
+- unauthenticated `/api/groq/analyze` -> 401
+- the unauthenticated analyze attempt did **not** reach the outbound Groq spy.
+
+The critical Groq bypass therefore requires a valid audit token; it is an authorization-boundary/design failure after authentication, not an unauthenticated endpoint exposure.
+
+
 ## Phase 2 priority proposal — no fixes applied yet
 
 P0:
 1. server-side deterministic proof token/envelope required by `/api/groq/analyze`, bound to source hash + config/spec + all required pass results; reject arbitrary proxy payloads
-2. apply audit edge gate to Backtest user-visible signal, or clearly separate proposed/research direction without calling it final signal
-3. replace fake replay with actual stored-artifact deterministic replay
-4. serialize/atomically queue hash-chained audit writes and test concurrent chain integrity
+2. server-validate durable decision records, enforce unique recordId/provenance, and reject forged audit payloads
+3. apply audit edge gate to Backtest user-visible signal, or clearly separate proposed/research direction without calling it final signal
+4. replace fake replay (server and CLI) with actual stored-artifact deterministic replay
+5. serialize/atomically queue hash-chained audit writes and test concurrent chain integrity
+6. correct Stage 11 reference capture so validation is bound to the actual contract target/entry and actual platform expiry reference; do not assume resolver-button capture equals trade entry
 
 P1:
-4. write a durable NEUTRAL decision record for every preflight/deterministic block
-5. stop Auto Test from clearing the actual reject reason
-6. add manual Analyze re-entry guard
-7. decide/spec whether payout is truly required before AI; if yes, add it to deterministic reasons (spec change)
-8. strict client model schema: reject wrong types/out-of-range rather than coerce/clamp
-9. server-side schema for audit/outcome events and frozen model/prompt/schema
+7. write a durable NEUTRAL/skip decision record for every preflight, similarity and cooldown branch
+8. stop Auto Test from clearing the actual reject/audit-storage reason
+9. add manual Analyze re-entry guard
+10. decide/spec whether payout is truly required before AI; if yes, add it to deterministic reasons (spec change)
+11. strict client model schema: reject wrong types, extra properties and out-of-range values rather than coerce/clamp/repair
+12. server-side schema for outcome/settings events and frozen model/prompt/schema
+13. fix capture-surface classification, target-DPR diagnostics, muted/frozen-frame detection and specific reason codes
+14. compare platform clock against capture-time-aligned server time rather than post-OCR time (spec/rule change)
+15. make expiry parsing fail on conflicting duration candidates
 
 P2:
 10. lockfile + real linter
