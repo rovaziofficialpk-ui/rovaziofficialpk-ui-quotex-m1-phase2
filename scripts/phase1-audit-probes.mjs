@@ -601,4 +601,23 @@ findings.push({
   evidence: 'The AI cooldown timestamp is set before deterministic verification inside executeAiAnalysis. A pre-model reject therefore starts the 15s AI cooldown and can cause later changed frames to be skipped even though no AI request occurred.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v16', findings }, null, 2));
+
+findings.push({
+  id:'REPRO-LOCAL-WRITE-BLOCKS-SERVER-DURABILITY',
+  status: /export async function persistReproDecision[\s\S]*?await appendLocalReproRecord\(record\);[\s\S]*?try \{[\s\S]*?apiFetch\('\/api\/audit\/records'/.test(files.repro)
+    ? 'CONFIRMED_DURABILITY_GAP'
+    : 'UNVERIFIED',
+  evidence: 'persistReproDecision awaits IndexedDB insertion before entering the server-write try block. If local IndexedDB fails, the durable server audit write is never attempted.',
+});
+
+findings.push({
+  id:'REPRO-LOCAL-DURABLE-STATUS-NEVER-FINALIZED',
+  status: /await appendLocalReproRecord\(record\)/.test(files.repro)
+    && /record: \{ \.\.\.record, durableWrite: 'ok' \}/.test(files.repro)
+    && !/durableWrite: 'failed'|objectStore\(STORE\)\.put/.test(files.repro)
+    ? 'CONFIRMED_AUDIT_METADATA_BUG'
+    : 'UNVERIFIED',
+  evidence: "The local IndexedDB copy is inserted with durableWrite='pending' and is never updated to 'ok' after server success or 'failed' after server failure. Local audit metadata therefore cannot state actual durability.",
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v17', findings }, null, 2));
