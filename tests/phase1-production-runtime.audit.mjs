@@ -8,6 +8,7 @@ const screenPipeline = await import('../src/services/screenPipeline.ts');
 const screenFields = await import('../src/services/screenFieldVerification.ts');
 const outcomeResolver = await import('../src/services/outcomeResolver.ts');
 const precisionOptimizer = await import('../src/services/precisionOptimizer.ts');
+const backtest = await import('../src/services/backtest.ts');
 
 function modelPayload(overrides = {}) {
   return {
@@ -320,4 +321,60 @@ test('coverage locks remain hard false in both field and Stage3C verifiers', () 
   const stage = fs.readFileSync(new URL('../src/services/screenStage3C.ts', import.meta.url), 'utf8');
   assert.match(fields, /export const LAYOUT_VALIDATION_COVERAGE_COMPLETE = false/);
   assert.match(stage, /export const STAGE3C_VALIDATION_COVERAGE_COMPLETE = false/);
+});
+
+
+test('backtest summary uses decided-only win rate while reporting ties and total signal coverage', () => {
+  const rows = [
+    { bias:'CALL', outcome:'WIN', confidence:80, confirmationCount:4 },
+    { bias:'PUT', outcome:'LOSS', confidence:80, confirmationCount:4 },
+    { bias:'CALL', outcome:'TIE', confidence:80, confirmationCount:4 },
+    { bias:'NEUTRAL', outcome:'NEUTRAL', confidence:80, confirmationCount:0 },
+    { bias:'NEUTRAL', outcome:'NEUTRAL', confidence:80, confirmationCount:0 },
+  ];
+  const s = backtest.summarizeBacktest(rows);
+  assert.equal(s.analyzed, 5);
+  assert.equal(s.directional, 3);
+  assert.equal(s.neutral, 2);
+  assert.equal(s.wins, 1);
+  assert.equal(s.losses, 1);
+  assert.equal(s.ties, 1);
+  assert.equal(s.winRate, 50);
+  assert.equal(s.coverage, 60);
+});
+
+test('outcome summary agreement, null rate and known-return mean match reference vector', () => {
+  const mk = (id, resolverOutcome, unitReturn, platformOutcome, agreement) => ({
+    tradeId:id,
+    armedAt:'2026-09-20T00:00:00.000Z',
+    dueAt:'2026-09-20T00:01:00.000Z',
+    direction:'CALL',
+    entry:{},
+    expiry:{},
+    resolverOutcome,
+    resolverNullReason:resolverOutcome === null ? 'UNREADABLE' : null,
+    unitReturn,
+    platformOutcome,
+    agreement,
+    settlementRuleVersion:'x',
+    settlementRuleStatus:'DOCUMENTED_VERIFIED',
+    screenValidationStatus:'PENDING_30_MANUAL_DEMO_TRADES',
+  });
+  const s = outcomeResolver.summarizeOutcomeTrades([
+    mk('1','WIN',0.9,'WIN',true),
+    mk('2','LOSS',-1,'WIN',false),
+    mk('3','TIE',0,'TIE',true),
+    mk('4',null,null,'LOSS',null),
+  ]);
+  assert.equal(s.expired, 4);
+  assert.equal(s.resolverKnown, 3);
+  assert.equal(s.resolverNull, 1);
+  assert.equal(s.resolverNullRate, 25);
+  assert.equal(s.manuallyLabeled, 4);
+  assert.equal(s.agreementEligible, 3);
+  assert.equal(s.agreements, 2);
+  assert.equal(s.agreementRate, 66.67);
+  assert.equal(s.knownReturnCount, 3);
+  assert.equal(s.meanUnitReturnKnown, -0.033333);
+  assert.equal(s.fullSampleExpectancy, null);
 });
