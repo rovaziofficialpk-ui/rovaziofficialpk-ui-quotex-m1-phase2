@@ -23,6 +23,8 @@ const files = {
   screenPipelineSource: fs.readFileSync('src/services/screenPipeline.ts','utf8'),
   historyPanelSource: fs.readFileSync('src/components/HistoryPanel.tsx','utf8'),
   storageSource: fs.readFileSync('src/services/storage.ts','utf8'),
+  serverSecurity: fs.readFileSync('server/batch1Security.mjs','utf8'),
+  serverGate: fs.readFileSync('server/deterministicGate.mjs','utf8'),
   imagePreflightSource: fs.readFileSync('src/services/imagePreflight.ts','utf8'),
   outcomePanelSource: fs.readFileSync('src/components/OutcomeResolverPanel.tsx','utf8'),
   exportHistorySource: fs.readFileSync('src/utils/exportHistory.ts','utf8'),
@@ -45,7 +47,14 @@ const findings = [];
 const groqRoute = files.server.match(/if \(req\.method === 'POST' && url\.pathname === '\/api\/groq\/analyze'\) \{([\s\S]*?)\n      \}/);
 findings.push({
   id:'R2-SERVER-GATE',
-  status: groqRoute && /proxyGroq\(payload\)/.test(groqRoute[1]) && !/deterministic|timeframe|layout|chartType|priceAxis|asset/.test(groqRoute[1]) ? 'CONFIRMED_FAIL' : 'UNVERIFIED',
+  status: groqRoute
+    && /validateAnalyzeRequest/.test(groqRoute[1])
+    && /verifyNativeFrame/.test(groqRoute[1])
+    && /verification\.eligibleForModel/.test(groqRoute[1])
+    && /fixedGroqPayload/.test(groqRoute[1])
+    && !/proxyGroq\(payload\)/.test(groqRoute[1])
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
   evidence: groqRoute ? groqRoute[0] : 'route not found',
 });
 
@@ -134,25 +143,37 @@ findings.push({
 
 findings.push({
   id:'AI-SERVER-PAYLOAD-NOT-FROZEN',
-  status: groqRoute && !/GROQ_MODEL|vision-signal-v4\.0\.0|json_schema|SIGNAL_SCHEMA/.test(groqRoute[1])
-    ? 'CONFIRMED_FAIL'
-    : 'UNVERIFIED',
-  evidence: 'The authenticated server route forwards the caller-supplied payload unchanged; model, prompt, schema, temperature and image count are not server-frozen.',
+  status: /GROQ_FIXED_MODEL/.test(files.serverSecurity)
+    && /GROQ_FIXED_TEMPERATURE = 0/.test(files.serverSecurity)
+    && /GROQ_FIXED_SEED = 424242/.test(files.serverSecurity)
+    && /strict: true/.test(files.serverSecurity)
+    && /additionalProperties: false/.test(files.serverSecurity)
+    && /CLIENT_MODEL_PARAMETERS_FORBIDDEN/.test(files.serverSecurity)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Batch 1 server policy owns model, temperature, seed, strict response schema and rejects client model-parameter fields.',
 });
 
 findings.push({
   id:'AI-SERVER-UPSTREAM-TIMEOUT',
-  status: /await fetch\(GROQ_URL, \{/.test(files.server) && !/AbortController|signal:/.test((files.server.match(/async function proxyGroq\([\s\S]*?\n\}/)||[''])[0])
-    ? 'CONFIRMED_FAIL'
-    : 'UNVERIFIED',
-  evidence: 'proxyGroq uses fetch without a server-side AbortController/timeout.',
+  status: /const controller = new AbortController\(\)/.test(files.server)
+    && /signal: controller\.signal/.test(files.server)
+    && /GROQ_UPSTREAM_TIMEOUT_MS/.test(files.server)
+    && /GROQ_UPSTREAM_TIMEOUT/.test(files.server)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Server proxy has an independent AbortController timeout and returns GROQ_UPSTREAM_TIMEOUT on abort.',
 });
 
-const bodyCap = files.server.match(/const MAX_BODY_BYTES = ([^;]+);/);
 findings.push({
   id:'AI-REQUEST-SIZE-POLICY',
-  status: /32 \* 1024 \* 1024/.test(bodyCap?.[1] || '') ? 'CONFIRMED_MISMATCH' : 'UNVERIFIED',
-  evidence: bodyCap?.[0] || 'MAX_BODY_BYTES not found',
+  status: /ANALYZE_MAX_BODY_BYTES = 28 \* 1024 \* 1024/.test(files.serverSecurity)
+    && /ANALYZE_MAX_IMAGE_BYTES = 20 \* 1024 \* 1024/.test(files.serverSecurity)
+    && /readJson\(req, ANALYZE_MAX_BODY_BYTES\)/.test(files.server)
+    && /decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES/.test(files.server)
+    ? 'PASS'
+    : 'CONFIRMED_MISMATCH',
+  evidence: 'Analyze body and decoded native-frame byte limits are independently enforced server-side.',
 });
 
 const outcomeRoute = files.server.match(/if \(req\.method === 'POST' && url\.pathname === '\/api\/outcomes\/events'\) \{([\s\S]*?)\n      \}/);
@@ -168,11 +189,55 @@ findings.push({
 
 findings.push({
   id:'AUDIT-HASHCHAIN-CONCURRENCY',
-  status: /const previousRecordHash = await lastHash\(file\);[\s\S]*?await fs\.appendFile\(file/.test(files.server)
-    && !/Mutex|lock|queue|exclusive/.test(files.server)
-    ? 'CONFIRMED_RACE_RISK'
-    : 'UNVERIFIED',
-  evidence: 'appendHashedRecord performs read-last-hash then append without serialization; concurrent writes can share the same previousRecordHash.',
+  status: /withSerializedFileWrite/.test(files.serverSecurity)
+    && /const prior = queues\.get\(file\)/.test(files.serverSecurity)
+    && /await fs\.appendFile/.test(files.serverSecurity)
+    && /appendSerializedHashedRecord/.test(files.server)
+    ? 'PASS'
+    : 'CONFIRMED_RACE_RISK',
+  evidence: 'Batch 1 serializes each hash-chained file through a single per-file promise queue; runtime integration must agree with this source probe.',
+});
+
+
+findings.push({
+  id:'MALFORMED-JSON-STATUS',
+  status: /throw malformedJsonError\(\)/.test(files.server)
+    && /statusCode: 400/.test(files.serverSecurity)
+    && /MALFORMED_JSON/.test(files.serverSecurity)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Malformed JSON is mapped to a stable MALFORMED_JSON 400 error.',
+});
+
+findings.push({
+  id:'SECURITY-HEADERS',
+  status: /X-Frame-Options/.test(files.serverSecurity)
+    && /Content-Security-Policy/.test(files.serverSecurity)
+    && /Referrer-Policy/.test(files.serverSecurity)
+    && /Permissions-Policy/.test(files.serverSecurity)
+    && /securityHeaders/.test(files.server)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Batch 1 applies browser security headers to API and static success responses.',
+});
+
+findings.push({
+  id:'AUDIT-DUPLICATE-RECORDID',
+  status: /uniqueField: 'recordId'/.test(files.server)
+    && /DUPLICATE_/.test(files.serverSecurity)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Duplicate recordId is rejected by the serialized persistent writer.',
+});
+
+findings.push({
+  id:'AUDIT-TAMPER-DETECTION',
+  status: /export async function verifyHashChain/.test(files.serverSecurity)
+    && /RECORD_HASH_MISMATCH/.test(files.serverSecurity)
+    && /\/api\/audit\/verify/.test(files.server)
+    ? 'PASS'
+    : 'CONFIRMED_FAIL',
+  evidence: 'Server exposes authenticated chain verification and recomputes each record hash.',
 });
 
 findings.push({
@@ -295,11 +360,13 @@ findings.push({
 
 findings.push({
   id:'AUDIT-RECORD-SERVER-SCHEMA',
-  status: /if \(!recordId\)/.test(files.server)
-    && /return appendHashedRecord\(RECORDS_FILE, \{[\s\S]*?\.\.\.payload\.record/.test(files.server)
-    ? 'CONFIRMED_WEAK'
-    : 'UNVERIFIED',
-  evidence: 'POST /api/audit/records requires only recordId plus artifacts[]. The remaining audit record is caller-supplied and is not server-validated against the frozen decision schema/provenance.',
+  status: /validateDecisionRecord\(payload\.record\)/.test(files.server)
+    && /validateAuditArtifactEnvelope\(artifact\)/.test(files.server)
+    && /uniqueField: 'recordId'/.test(files.server)
+    && /INVALID_AUDIT_RECORD_SCHEMA/.test(files.serverSecurity)
+    ? 'PASS'
+    : 'CONFIRMED_WEAK',
+  evidence: 'Batch 1 validates the decision-record envelope and artifact envelope server-side and enforces unique recordId.',
 });
 
 
