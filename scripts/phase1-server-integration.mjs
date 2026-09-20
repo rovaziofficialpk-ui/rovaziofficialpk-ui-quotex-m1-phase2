@@ -48,7 +48,15 @@ try {
   const health = await waitForHealth();
   const unauth = await json('/api/auth/check');
   const auth = await json('/api/auth/check', { headers:{ 'X-Audit-Token':token } });
-
+  const unauthTime = await json('/api/time');
+  const spyCountBeforeUnauthAnalyze = stdout.join('').split('\n').filter((line)=>line.startsWith('PHASE1_GROQ_SPY_CALLED ')).length;
+  const unauthAnalyze = await json('/api/groq/analyze', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify({ model:'should-not-reach-spy', messages:[] }),
+  });
+  await new Promise((resolve)=>setTimeout(resolve,25));
+  const spyCountAfterUnauthAnalyze = stdout.join('').split('\n').filter((line)=>line.startsWith('PHASE1_GROQ_SPY_CALLED ')).length;
 
   const arbitraryAnalyze = await json('/api/groq/analyze', {
     method:'POST',
@@ -91,7 +99,35 @@ try {
       artifacts:[],
     }),
   });
-  const replay = await json('/api/audit/replay?limit=1', { headers:{ 'X-Audit-Token':token } });
+  const duplicateFakeRecord = await json('/api/audit/records', {
+    method:'POST',
+    headers,
+    body:JSON.stringify({
+      record:{
+        recordId:'fake-replay-record',
+        gateSnapshot:{ finalBias:'NEUTRAL', finalReason:'AUDIT_LOCK_DUPLICATE_ID' },
+        deterministicScreen:{ safeForAi:true, reasons:[], forged:true },
+      },
+      artifacts:[],
+    }),
+  });
+  const replay = await json('/api/audit/replay?limit=2', { headers:{ 'X-Audit-Token':token } });
+
+  const homeResponse = await fetch(base + '/');
+  const homeHeaders = {
+    contentSecurityPolicy: homeResponse.headers.get('content-security-policy'),
+    xFrameOptions: homeResponse.headers.get('x-frame-options'),
+    permissionsPolicy: homeResponse.headers.get('permissions-policy'),
+    referrerPolicy: homeResponse.headers.get('referrer-policy'),
+    xContentTypeOptions: homeResponse.headers.get('x-content-type-options'),
+  };
+
+  const malformedJson = await fetch(base + '/api/settings/log', {
+    method:'POST',
+    headers,
+    body:'{',
+  });
+  const malformedJsonBody = await malformedJson.json().catch(()=>null);
 
   const concurrencyRequests = [];
   for (let i=0;i<120;i+=1) {
@@ -115,19 +151,27 @@ try {
   }
 
   result = {
-    probeVersion:'phase1-server-integration-v2',
+    probeVersion:'phase1-server-integration-v3',
     health,
     unauthenticatedAuthStatus:unauth.status,
     authenticatedAuthStatus:auth.status,
+    unauthenticatedTimeStatus:unauthTime.status,
+    unauthenticatedAnalyzeStatus:unauthAnalyze.status,
+    unauthenticatedAnalyzeReachedOutboundGroqSpy:spyCountAfterUnauthAnalyze > spyCountBeforeUnauthAnalyze,
     arbitraryAnalyzeStatus:arbitraryAnalyze.status,
     arbitraryAnalyzeReachedOutboundGroqSpy:arbitraryAnalyze.status === 200 && Boolean(groqSpyLine),
     arbitraryAnalyzeSpyEvidence:groqSpyLine,
     invalidOutcomePayloadAccepted:invalidOutcome.status === 201,
     invalidOutcomeStatus:invalidOutcome.status,
     fakeReplayRecordStored:fakeRecord.status === 201,
+    duplicateAuditRecordIdAccepted:duplicateFakeRecord.status === 201,
+    duplicateAuditRecordStatus:duplicateFakeRecord.status,
     replayStatus:replay.status,
     replayReportedAllSame:replay.body?.allSame ?? null,
-    replayRow:replay.body?.rows?.[0] ?? null,
+    replayRows:replay.body?.rows ?? null,
+    staticSecurityHeaders:homeHeaders,
+    malformedJsonStatus:malformedJson.status,
+    malformedJsonError:malformedJsonBody?.error ?? null,
     concurrencyWrites:concurrencyResponses.length,
     concurrencyNon201:concurrencyResponses.filter((x)=>x.status!==201).length,
     hashChainBrokenLinks:brokenLinks,
