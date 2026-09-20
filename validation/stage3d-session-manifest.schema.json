@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Stage 3D labeled recording manifest",
+  "type": "object",
+  "required": [
+    "version",
+    "frozenSpec",
+    "specHistory",
+    "sessions",
+    "negativeControls",
+    "liveAcceptance"
+  ],
+  "properties": {
+    "version": {
+      "const": "stage3d-session-manifest-v2"
+    },
+    "frozenSpec": {
+      "type": "object",
+      "required": [
+        "specId",
+        "configVersion",
+        "layoutVersion",
+        "templateVersions",
+        "thresholds",
+        "frozenDate"
+      ],
+      "properties": {
+        "specId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layoutVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "templateVersions": {
+          "type": "object"
+        },
+        "thresholds": {
+          "type": "object"
+        },
+        "frozenDate": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "specHistory": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "split",
+          "asset",
+          "timeframe",
+          "chartType",
+          "windowState",
+          "evaluatedSpecId",
+          "resultsSeen",
+          "frames"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "split": {
+            "enum": [
+              "calibration",
+              "acceptance"
+            ]
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeframe": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chartType": {
+            "enum": [
+              "candlestick",
+              "line",
+              "bars",
+              "heikin_ashi"
+            ]
+          },
+          "windowState": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evaluatedSpecId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resultsSeen": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "frameId",
+                "expectedGate",
+                "actualGate",
+                "pass",
+                "fields",
+                "failureReasons"
+              ],
+              "properties": {
+                "frameId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expectedGate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "actualGate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pass": {
+                  "type": "boolean"
+                },
+                "fields": {
+                  "type": "object",
+                  "properties": {
+                    "timeframeBadge": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timeAxis": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "chartType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "asset": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "priceAxis": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "clock": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "payout": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "failureReasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "negativeControls": {
+      "type": "object"
+    },
+    "liveAcceptance": {
+      "type": "object",
+      "required": [
+        "postDeploymentDecisions",
+        "replayMatches"
+      ],
+      "properties": {
+        "postDeploymentDecisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replayMatches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

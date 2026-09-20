@@ -1,0 +1,130 @@
+{
+  "version": "stage3d-session-manifest-v2",
+  "frozenSpec": {
+    "specId": "stage3d-spec-v1",
+    "configVersion": "input-pipeline-v1.4.0",
+    "layoutVersion": "quotex-desktop-observed-v1.3.0",
+    "templateVersions": {
+      "timeframe": "quotex-1m-template-v1",
+      "candlestick": "quotex-candlestick-v1",
+      "line": null,
+      "bars": null,
+      "heikinAshi": null
+    },
+    "thresholds": {
+      "timeframeBadgeMinimumCorrelation": 0.985,
+      "minutesPerCandle": 1,
+      "minutesPerCandleTolerance": 0.08,
+      "candlestickMinimumCorrelation": 0.92,
+      "priceAxisMinimumLabels": 5,
+      "priceAxisMinimumR2": 0.995,
+      "priceAxisMaximumPixelSpacingCv": 0.25,
+      "priceAxisMaximumPriceStepCv": 0.1,
+      "ocrMinimumTokenConfidence": 70
+    },
+    "frozenDate": "2026-09-20"
+  },
+  "specHistory": [
+    {
+      "specId": "stage3c-spec-v1",
+      "configVersion": "input-pipeline-v1.3.1",
+      "layoutVersion": "quotex-desktop-observed-v1.2.1",
+      "acceptanceResultsSeen": false,
+      "invalidatedAcceptanceSessionIds": [],
+      "note": "No acceptance sessions existed before the Stage 3D layout/manifest changes."
+    },
+    {
+      "specId": "stage3d-spec-v1",
+      "configVersion": "input-pipeline-v1.4.0",
+      "layoutVersion": "quotex-desktop-observed-v1.3.0",
+      "acceptanceResultsSeen": false,
+      "invalidatedAcceptanceSessionIds": [],
+      "changedFields": [
+        "platformClock crop",
+        "acceptance hygiene manifest",
+        "condition reporting"
+      ],
+      "note": "Current frozen Stage 3D specification."
+    }
+  ],
+  "sessions": [
+    {
+      "sessionId": "calibration-session-001",
+      "split": "calibration",
+      "asset": "CAD/CHF (OTC)",
+      "timeframe": "M1",
+      "chartType": "candlestick",
+      "windowState": "observed-desktop-calibration",
+      "evaluatedSpecId": "stage3d-spec-v1",
+      "resultsSeen": true,
+      "frames": [
+        {
+          "frameId": "calibration-placeholder",
+          "expectedGate": "CALIBRATION_ONLY",
+          "actualGate": "CALIBRATION_ONLY",
+          "pass": true,
+          "fields": {
+            "timeframeBadge": "PASS_CALIBRATION",
+            "timeAxis": "PASS_CALIBRATION",
+            "chartType": "PASS_CALIBRATION",
+            "asset": "PASS_CALIBRATION",
+            "priceAxis": "PASS_CALIBRATION",
+            "clock": "UNVERIFIED_LOW_RESOLUTION",
+            "payout": "PASS_CALIBRATION"
+          },
+          "failureReasons": []
+        }
+      ]
+    }
+  ],
+  "negativeControls": {
+    "chartTypes": {
+      "line": {
+        "status": "NOT_SUPPLIED",
+        "templateVersion": null,
+        "frames": 0
+      },
+      "bars": {
+        "status": "NOT_SUPPLIED",
+        "templateVersion": null,
+        "frames": 0
+      },
+      "heikin_ashi": {
+        "status": "NOT_SUPPLIED",
+        "templateVersion": null,
+        "frames": 0
+      }
+    },
+    "timeframes": {
+      "5s": {
+        "status": "NOT_SUPPLIED",
+        "badgeCheck": "NOT_RUN",
+        "timeAxisCheck": "NOT_RUN"
+      },
+      "15s": {
+        "status": "NOT_SUPPLIED",
+        "badgeCheck": "NOT_RUN",
+        "timeAxisCheck": "NOT_RUN"
+      },
+      "30s": {
+        "status": "NOT_SUPPLIED",
+        "badgeCheck": "NOT_RUN",
+        "timeAxisCheck": "NOT_RUN"
+      },
+      "5m": {
+        "status": "NOT_SUPPLIED",
+        "badgeCheck": "NOT_RUN",
+        "timeAxisCheck": "NOT_RUN"
+      },
+      "15m": {
+        "status": "NOT_SUPPLIED",
+        "badgeCheck": "NOT_RUN",
+        "timeAxisCheck": "NOT_RUN"
+      }
+    }
+  },
+  "liveAcceptance": {
+    "postDeploymentDecisions": 0,
+    "replayMatches": 0
+  }
+}

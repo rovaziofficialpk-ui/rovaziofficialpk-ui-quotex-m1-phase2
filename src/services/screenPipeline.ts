@@ -1,8 +1,8 @@
 import type { TradeSignal } from '../signalLogic';
 
-export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.2.1';
-export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.3.1';
-export const LAYOUT_PROFILE_VERSION = 'quotex-desktop-observed-v1.2.1';
+export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.3.0';
+export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.4.0';
+export const LAYOUT_PROFILE_VERSION = 'quotex-desktop-observed-v1.3.0';
 
 export type ScreenReasonCode =
   | 'LAYOUT_NOT_FOUND'
@@ -108,7 +108,7 @@ const PROFILE = {
     assetLabel: { x: 0.05978261, y: 0.05389222, w: 0.16304348, h: 0.09580838 },
     timeframeBadge: { x: 0.07472826, y: 0.88922156, w: 0.03668478, h: 0.08682635 },
     chartTypeToolbar: { x: 0.045, y: 0.70, w: 0.10, h: 0.295 },
-    platformClock: { x: 0.045, y: 0.915, w: 0.14, h: 0.08 },
+    platformClock: { x: 0.06, y: 0.14, w: 0.20, h: 0.065 },
     tradePanel: { x: 0.88722826, y: 0.05389222, w: 0.11277174, h: 0.94610778 },
     payoutExpiryPanel: { x: 0.88722826, y: 0.05389222, w: 0.11277174, h: 0.43413174 },
   } satisfies Record<CropRole, RelativeRect>,

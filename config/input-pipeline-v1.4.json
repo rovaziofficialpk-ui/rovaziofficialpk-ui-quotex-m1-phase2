@@ -1,0 +1,98 @@
+{
+  "version": "input-pipeline-v1.4.0",
+  "auditLock": true,
+  "configuredTimeframe": "M1",
+  "configuredAsset": "USER_SESSION_SETTING_REQUIRED",
+  "layoutProfileVersion": "quotex-desktop-observed-v1.3.0",
+  "singleFrameOnly": true,
+  "stage3d": {
+    "clock": {
+      "candidateRegion": "top-left chart area under asset card near risk-information pill",
+      "crop": {
+        "x": 0.06,
+        "y": 0.14,
+        "w": 0.2,
+        "h": 0.065
+      },
+      "acceptedLiveForms": [
+        "HH:MM:SS + UTC token",
+        "HHMMSS + UTC token in same crop"
+      ],
+      "maximumLiveStalenessSeconds": 5,
+      "frozenIfSameClockAfterMs": 1500,
+      "secondsIntoCandle": "platform_utc_seconds_mod_60",
+      "savedEvidenceStatus": "CLOCK_UNREADABLE",
+      "expiryTimerUsedAsClock": false,
+      "timeAxisLabelsUsedAsLiveClock": false
+    },
+    "acceptanceHygiene": {
+      "splitUnit": "SESSION",
+      "rule": "Any threshold/template/layout change after acceptance results are seen invalidates those acceptance sessions for future acceptance.",
+      "invalidatedSessionsBecome": "calibration",
+      "requireNewUntouchedAcceptanceSessions": true,
+      "autoUnlock": false
+    },
+    "negativeControls": {
+      "chartTypes": [
+        "line",
+        "bars",
+        "heikin_ashi"
+      ],
+      "timeframes": [
+        "5s",
+        "15s",
+        "30s",
+        "5m",
+        "15m"
+      ],
+      "timeframeChecks": [
+        "badge",
+        "time_axis_candle_pitch"
+      ],
+      "onlyRealUserFrames": true,
+      "syntheticResultsCannotSatisfyAcceptance": true
+    },
+    "conditionReport": {
+      "groupBy": [
+        "asset",
+        "timeframe",
+        "chartType",
+        "windowState"
+      ],
+      "listEveryFailedFrame": true
+    }
+  },
+  "frozenThresholds": {
+    "timeframeBadgeMinimumCorrelation": 0.985,
+    "minutesPerCandle": 1,
+    "minutesPerCandleTolerance": 0.08,
+    "candlestickMinimumCorrelation": 0.92,
+    "priceAxisMinimumLabels": 5,
+    "priceAxisMinimumR2": 0.995,
+    "priceAxisMaximumPixelSpacingCv": 0.25,
+    "priceAxisMaximumPriceStepCv": 0.1,
+    "ocrMinimumTokenConfidence": 70
+  },
+  "validationCoverage": {
+    "requiredSessions": 3,
+    "requiredAssets": 2,
+    "requiredWindowOrZoomStates": 2,
+    "requiredRealNonM1": [
+      "5s",
+      "15s",
+      "30s",
+      "5m",
+      "15m"
+    ],
+    "requiredNegativeChartTypes": [
+      "line",
+      "bars",
+      "heikin_ashi"
+    ],
+    "complete": false,
+    "effect": "AI_CALL_BLOCKED_WITH_LAYOUT_VALIDATION_INCOMPLETE",
+    "manifestSchema": "stage3d-session-manifest-v2",
+    "autoUnlock": false
+  },
+  "outcomeDataUsedForRules": false
+}

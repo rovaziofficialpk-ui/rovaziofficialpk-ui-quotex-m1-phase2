@@ -1,0 +1,58 @@
+{
+  "version": "quotex-desktop-observed-v1.3.0",
+  "calibration": {
+    "sessionCount": 1,
+    "primarySessionId": "calibration-session-001",
+    "tradeOutcomesUsed": false
+  },
+  "platformClock": {
+    "crop": {
+      "x": 0.06,
+      "y": 0.14,
+      "w": 0.2,
+      "h": 0.065
+    },
+    "regionDescription": "top-left chart area directly under asset card and above/near risk-information pill",
+    "evidence": {
+      "visualCandidatePresent": true,
+      "deterministicOcrVerified": false,
+      "status": "CLOCK_UNREADABLE",
+      "sequenceObservation": "time-like text changes across saved frames, but low-resolution OCR does not recover a valid HH:MM:SS UTC string reliably",
+      "ocrRepresentative": {
+        "A_under_asset_wide": {
+          "psm7": "",
+          "psm11": "TT"
+        },
+        "B_clock_line_tight": {
+          "psm7": "",
+          "psm11": ""
+        },
+        "C_clock_plus_risk": {
+          "psm7": "",
+          "psm11": ""
+        },
+        "D_previous_bottom_left": {
+          "psm7": "",
+          "psm11": ""
+        }
+      }
+    },
+    "expiryTimerUsedAsClock": false,
+    "timeAxisUsedAsClock": false
+  },
+  "negativeControlEvidence": {
+    "line": "NOT_SUPPLIED",
+    "bars": "NOT_SUPPLIED",
+    "heikin_ashi": "NOT_SUPPLIED",
+    "5s": "NOT_SUPPLIED",
+    "15s": "NOT_SUPPLIED",
+    "30s": "NOT_SUPPLIED",
+    "5m": "NOT_SUPPLIED",
+    "15m": "NOT_SUPPLIED"
+  },
+  "acceptanceSet": {
+    "untouchedSessions": 0,
+    "status": "EMPTY",
+    "coverageLock": "ON"
+  }
+}
