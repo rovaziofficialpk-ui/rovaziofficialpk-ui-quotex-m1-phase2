@@ -3,7 +3,7 @@ import type { ImagePreflightResult } from './imagePreflight';
 import { apiFetch } from './apiClient';
 
 export const GROQ_MODEL = 'qwen/qwen3.8-27b';
-export const GROQ_PROMPT_VERSION = 'vision-signal-v5.0.0-server-fixed';
+export const GROQ_PROMPT_VERSION = 'vision-signal-v4.0.0';
 export const GROQ_TEMPERATURE = 0;
 export const GROQ_SEED = 424242;
 const REQUEST_TIMEOUT_MS = 45_000;
