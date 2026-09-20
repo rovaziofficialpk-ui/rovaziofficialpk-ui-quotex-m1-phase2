@@ -26,7 +26,7 @@ function validRecord(index) {
     schemaVersion: 'decision-record-v1',
     recordId: 'batch1-record-' + String(index).padStart(4, '0'),
     configVersion: 'input-pipeline-v1.6.0',
-    promptVersion: 'vision-signal-v5.0.0-server-fixed',
+    promptVersion: 'vision-signal-v4.0.0',
     modelName: 'qwen/qwen3.8-27b',
     temperature: 0,
     seed: 424242,
