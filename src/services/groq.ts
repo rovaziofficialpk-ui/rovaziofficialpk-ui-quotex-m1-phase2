@@ -14,35 +14,6 @@ export interface ContextImage {
   image: string;
 }
 
-const SYSTEM_PROMPT = `You analyze trading-chart screenshots for educational technical-analysis purposes. Focus on visible evidence only and be conservative.
-
-The FIRST image is always the primary M1 chart. Additional images, when supplied, are optional higher-timeframe context and are explicitly labeled M5 or H1 in the user message.
-
-For the primary M1 chart:
-- CALL only when visible price action supports a bullish setup.
-- PUT only when visible price action supports a bearish setup.
-- NEUTRAL when evidence is weak, conflicting, mid-range, blurry, cropped, or lacks usable context.
-- Detect whether the primary screenshot visibly appears to be M1. If another timeframe is visible, set timeframe to "other". If you cannot verify it, set timeframe to "unknown".
-- Set chartQuality to "poor" when candles, labels, or recent price action are too blurry/cropped to analyze reliably.
-- confidence is AI setup-confidence from 0-100 based only on visible chart evidence. It is NOT a measured probability of trade success.
-
-Independent evidence fields:
-- trend: directional trend visible on the primary chart.
-- momentum: short-term momentum visible on the primary chart.
-- structure: swing/high-low or range structure visible on the primary chart.
-- candleSignal: latest relevant candle/candlestick evidence.
-Do NOT force these fields to agree with the proposed bias. Report each independently from visible evidence.
-
-Other fields:
-- supportResistance: briefly state the most relevant visible support/resistance or say no reliable level is visible.
-- evidence: short concrete observations from the screenshot; do not invent indicators or levels that are not visible.
-- contextAlignment: if no context screenshots were supplied use "not_provided". Otherwise compare M5/H1 context with the M1 proposal and choose aligned, mixed, or conflicting.
-- contextNotes: briefly explain the higher-timeframe relationship, or say no context was provided.
-- warnings: important limitations visible in the screenshots.
-
-For weak or unclear setups choose NEUTRAL rather than inventing certainty. Identify the asset/pair only if visible; otherwise use "Unknown Asset".
-Return only the fields required by the supplied JSON schema.`;
-
 export class GroqRequestError extends Error {
   status?: number;
 
@@ -110,10 +81,6 @@ export async function analyzeChartWithGroq(args: {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const startedAt = performance.now();
-  const contextImages = (args.contextImages || []).slice(0, 2);
-  if (contextImages.length > 0) {
-    throw new GroqRequestError('Single-frame audit mode does not allow client-supplied context images.');
-  }
 
   try {
     const response = await apiFetch('/api/groq/analyze', {
@@ -130,7 +97,18 @@ export async function analyzeChartWithGroq(args: {
     });
 
     if (!response.ok) {
-      throw new GroqRequestError(await readErrorMessage(response), response.status);
+      let detail = '';
+      try {
+        const data = await response.clone().json();
+        detail = typeof data?.reasonCode === 'string'
+          ? `${data.error || 'Server analysis rejected'}: ${data.reasonCode}`
+          : typeof data?.error === 'string'
+            ? data.error
+            : '';
+      } catch {
+        // Fall through to the normal Groq error reader.
+      }
+      throw new GroqRequestError(detail || await readErrorMessage(response), response.status);
     }
 
     const rawApiResponseText = await response.text();
@@ -153,7 +131,7 @@ export async function analyzeChartWithGroq(args: {
       args.minConfidence,
       content,
       { score: args.preflight.score, status: args.preflight.status },
-      contextImages.length,
+      0,
     );
     const gatesFinishedAt = performance.now();
     return {
