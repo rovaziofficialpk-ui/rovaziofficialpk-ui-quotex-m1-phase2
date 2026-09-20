@@ -76,6 +76,8 @@ export function securityHeaders(contentType = null) {
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), display-capture=(self)',
     'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   };
   if (contentType) headers['Content-Type'] = contentType;
   return headers;
