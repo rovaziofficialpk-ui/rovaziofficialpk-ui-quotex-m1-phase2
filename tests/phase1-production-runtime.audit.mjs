@@ -32,7 +32,15 @@ function modelPayload(overrides = {}) {
 
 test('R1 behavioral: audit edge gate forces CALL and PUT to NEUTRAL', () => {
   for (const bias of ['CALL', 'PUT']) {
-    const signal = signalLogic.applySignalGate(modelPayload({ bias }), 50, '{}', { score: 100, status: 'pass' }, 0);
+    const directional = bias === 'CALL' ? 'bullish' : 'bearish';
+    const signal = signalLogic.applySignalGate(modelPayload({
+      bias,
+      trend: directional,
+      momentum: directional,
+      structure: directional,
+      candleSignal: directional,
+      confidence: 95,
+    }), 50, '{}', { score: 100, status: 'pass' }, 0);
     assert.equal(signal.bias, bias);
     const gated = edgeGate.applyAuditEdgeGate(signal);
     assert.equal(gated.bias, 'NEUTRAL');
@@ -102,7 +110,7 @@ test('price-axis parser fails closed below its minimum label count', () => {
   ];
   const result = screenFields.parsePriceAxis(tokens, '1.1000 1.0995 1.0990');
   assert.equal(result.readable, false);
-  assert.equal(result.reasonCode, 'PRICE_AXIS_UNREADABLE');
+  assert.equal(result.reasonCode, 'INSUFFICIENT_PRICE_LABELS');
 });
 
 test('model validator rejects malformed JSON and invalid enum', () => {
