@@ -301,7 +301,7 @@ async function serveStatic(req, res) {
   if (rel === '/') rel = '/index.html';
   let target = path.resolve(DIST_DIR, '.' + rel);
   if (!target.startsWith(path.resolve(DIST_DIR))) {
-    res.writeHead(403); res.end('Forbidden'); return;
+    return sendText(res, 403, 'Forbidden');
   }
   try {
     const stat = await fs.stat(target);
@@ -318,7 +318,7 @@ async function serveStatic(req, res) {
     });
     createReadStream(target).pipe(res);
   } catch {
-    res.writeHead(404); res.end('Not found');
+    return sendText(res, 404, 'Not found');
   }
 }
 
