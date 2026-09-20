@@ -1,4 +1,4 @@
-import { SIGNAL_SCHEMA, applySignalGate, validateModelSignal, type TradeSignal } from '../signalLogic';
+import { applySignalGate, validateModelSignal, type TradeSignal } from '../signalLogic';
 import type { ImagePreflightResult } from './imagePreflight';
 import { apiFetch } from './apiClient';
 
@@ -56,6 +56,9 @@ export class GroqRequestError extends Error {
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json();
+    if (typeof data?.error === 'string') {
+      return data.reasonCode ? `${data.error}: ${data.reasonCode}` : data.error;
+    }
     return data?.error?.message || `Groq API error (${response.status})`;
   } catch {
     return `Groq API error (${response.status})`;
@@ -101,23 +104,15 @@ export async function analyzeChartWithGroq(args: {
   minConfidence: number;
   preflight: ImagePreflightResult;
   contextImages?: ContextImage[];
+  configuredAsset: string;
+  capturedAt?: string | null;
 }): Promise<GroqAnalysisResult> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const startedAt = performance.now();
   const contextImages = (args.contextImages || []).slice(0, 2);
-
-  const userContent: Array<Record<string, unknown>> = [
-    {
-      type: 'text',
-      text: `Analyze the primary M1 screenshot below. Local preflight score: ${args.preflight.score}/100 (${args.preflight.status}). Use the score only as image-quality context; do your own visual assessment.`,
-    },
-    { type: 'image_url', image_url: { url: args.image } },
-  ];
-
-  for (const contextImage of contextImages) {
-    userContent.push({ type: 'text', text: `Optional ${contextImage.label} context screenshot:` });
-    userContent.push({ type: 'image_url', image_url: { url: contextImage.image } });
+  if (contextImages.length > 0) {
+    throw new GroqRequestError('Single-frame audit mode does not allow client-supplied context images.');
   }
 
   try {
@@ -128,23 +123,9 @@ export async function analyzeChartWithGroq(args: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-        reasoning_effort: 'none',
-        temperature: GROQ_TEMPERATURE,
-        seed: GROQ_SEED,
-        max_tokens: 850,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'm1_chart_signal_phase3',
-            strict: true,
-            schema: SIGNAL_SCHEMA,
-          },
-        },
+        imageDataUrl: args.image,
+        configuredAsset: args.configuredAsset,
+        capturedAt: args.capturedAt ?? null,
       }),
     });
 
