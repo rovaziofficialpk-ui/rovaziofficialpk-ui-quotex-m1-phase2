@@ -30,7 +30,13 @@ import {
   type ContextImage,
   type ContextLabel,
 } from './services/groq';
-import { buildFullFrameArtifact } from './services/auditArtifacts';
+import { buildAuditArtifact, buildFullFrameArtifact } from './services/auditArtifacts';
+import {
+  INPUT_PIPELINE_CONFIG_VERSION,
+  LAYOUT_PROFILE_VERSION,
+  createDeterministicNeutralSignal,
+  inspectAndCropSingleFrame,
+} from './services/screenPipeline';
 import { newRecordId, persistReproDecision, type ReproDecisionRecord } from './services/reproAudit';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
 import { applyAuditEdgeGate } from './services/edgeGate';
@@ -57,6 +63,7 @@ import { createHistoryItem, type SignalHistoryItem, type TradeSignal } from './s
 import { exportHistoryCsv, exportHistoryJson } from './utils/exportHistory';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const CONFIGURED_ASSET: string | null = null;
 type PrimarySource = 'upload' | 'paste' | 'live';
 type AnalysisStage = 'idle' | 'capturing' | 'preflight' | 'ai';
 
@@ -356,32 +363,160 @@ function App() {
       sourceFrameSize: { width: number; height: number } | null;
     } = { capturedAt: null, captureMs: null, preflightMs: null, sourceFrameSize: null },
   ): Promise<TradeSignal> => {
-    const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
-      .filter((label) => Boolean(contextImages[label]))
-      .map((label) => ({ label, image: contextImages[label] as string }));
+    const source: AuditSignalSource = primarySource === 'live'
+      ? 'live_tab'
+      : primarySource === 'paste'
+        ? 'paste'
+        : 'upload';
 
+    const deterministicStartedAt = performance.now();
+    const deterministic = await inspectAndCropSingleFrame(analysisImage, CONFIGURED_ASSET);
+    const deterministicScreenMs = Math.round(performance.now() - deterministicStartedAt);
+
+    const sourceArtifact = await buildFullFrameArtifact('source_frame', analysisImage, auditMeta.capturedAt);
+    const cropArtifacts = await Promise.all(deterministic.crops.map((crop) => (
+      buildAuditArtifact({
+        role: crop.role,
+        dataUrl: crop.dataUrl,
+        capturedAt: auditMeta.capturedAt,
+        cropRect: crop.rect,
+        sourceFrameSize: sourceArtifact.sourceFrameSize,
+        sourceFrameSha256: sourceArtifact.sha256,
+      })
+    )));
+    const artifacts = [sourceArtifact, ...cropArtifacts];
+
+    const capturedMs = auditMeta.capturedAt ? Date.parse(auditMeta.capturedAt) : Number.NaN;
+    const persistRecord = async (record: ReproDecisionRecord) => {
+      const durable = await persistReproDecision(record, artifacts);
+      if (!durable.durable) {
+        setError('Audit warning: decision remained NEUTRAL, but durable server audit storage failed. A local append-only copy was retained.');
+      }
+    };
+
+    if (!deterministic.safeForAi) {
+      const decisionAt = new Date().toISOString();
+      const neutral = createDeterministicNeutralSignal(deterministic);
+      setSignal(neutral);
+      setResponseTime(null);
+      setHistory((current) => [createHistoryItem(neutral, 0, minConfidence), ...current].slice(0, HISTORY_LIMIT));
+
+      void appendAuditSignal(createAuditSignalRecord({
+        signal: neutral,
+        source,
+        capturedAt: auditMeta.capturedAt,
+        decisionAt,
+        entryPrice: null,
+        entryTimestamp: null,
+        expiryTimestamp: null,
+        expirySeconds: null,
+        payout: null,
+        outcome: 'NEUTRAL',
+        feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
+        rawDataRef: sourceArtifact.sha256,
+      })).catch(() => undefined);
+
+      const decisionMs = Date.parse(decisionAt);
+      const totalCaptureToDecision = Number.isFinite(capturedMs) && Number.isFinite(decisionMs)
+        ? Math.max(0, decisionMs - capturedMs)
+        : null;
+
+      const reproRecord: ReproDecisionRecord = {
+        schemaVersion: 'decision-record-v1',
+        recordId: newRecordId(),
+        configVersion: INPUT_PIPELINE_CONFIG_VERSION,
+        promptVersion: GROQ_PROMPT_VERSION,
+        modelName: GROQ_MODEL,
+        temperature: GROQ_TEMPERATURE,
+        seed: GROQ_SEED,
+        seedReason: 'Fixed before outcome analysis. No model call occurred because deterministic verification failed.',
+        systemFingerprint: null,
+        capturedAt: auditMeta.capturedAt,
+        decisionAt,
+        source,
+        configuredTimeframe: 'M1',
+        layoutProfileVersion: LAYOUT_PROFILE_VERSION,
+        layoutReason: deterministic.layoutFound
+          ? 'CALIBRATED_LAYOUT_FOUND_BUT_REQUIRED_FIELDS_UNVERIFIED'
+          : 'LAYOUT_NOT_FOUND',
+        deterministicScreen: deterministic,
+        rawModelResponseText: null,
+        modelCallSkippedReason: deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT',
+        preflight: analysisPreflight,
+        gateSnapshot: {
+          modelProposedBias: 'NEUTRAL',
+          preAuditBias: 'NEUTRAL',
+          finalBias: 'NEUTRAL',
+          finalReason: neutral.gateReason || 'DETERMINISTIC_SCREEN_REJECT',
+        },
+        timingsMs: {
+          capture: auditMeta.captureMs,
+          preflight: auditMeta.preflightMs,
+          deterministicScreen: deterministicScreenMs,
+          aiCall: null,
+          gates: 0,
+          totalCaptureToDecision,
+        },
+        nullReasons: {
+          entryPrice: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
+          payout: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
+          expiry: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
+          deterministicTimeframe: deterministic.timeframe.reasonCode || 'TIMEFRAME_UNVERIFIED',
+          deterministicAsset: deterministic.asset.reasonCode || 'ASSET_UNVERIFIED',
+          priceAxis: deterministic.priceAxis.reasonCode || 'PRICE_AXIS_UNREADABLE',
+          timeAxis: deterministic.timeAxis.reasonCode || 'TIME_AXIS_UNREADABLE',
+        },
+        durableWrite: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        await persistRecord(reproRecord);
+      } catch (auditError) {
+        setError(`Audit warning: deterministic reject stayed NEUTRAL, but reproducibility logging failed: ${auditError instanceof Error ? auditError.message : 'unknown error'}`);
+      }
+      setError(`Blocked before AI: ${deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT'}. No model image was sent.`);
+      return neutral;
+    }
+
+    const primaryCrop = deterministic.crops.find((crop) => crop.role === 'primary');
+    if (!primaryCrop) throw new Error('LAYOUT_NOT_FOUND: calibrated primary crop is missing.');
+
+    const primaryPreflightStartedAt = performance.now();
+    const primaryPreflight = await analyzeImagePreflight(primaryCrop.dataUrl);
+    const primaryPreflightMs = Math.round(performance.now() - primaryPreflightStartedAt);
+    if (primaryPreflight.status === 'block') {
+      const rejected = createDeterministicNeutralSignal({
+        ...deterministic,
+        safeForAi: false,
+        reasonCode: 'LAYOUT_NOT_FOUND',
+        reasons: [...deterministic.reasons, 'LAYOUT_NOT_FOUND'],
+      });
+      rejected.gateReason = 'PIXEL_PREFLIGHT_BLOCK: verified crop failed deterministic pixel preflight. AI was not called.';
+      setSignal(rejected);
+      setResponseTime(null);
+      return rejected;
+    }
+
+    // Single-frame audit mode: no independently uploaded M5/H1 image is ever
+    // attached to the decision. The AI receives only the verified primary crop.
     const result = await analyzeChartWithGroq({
       apiKey,
-      image: analysisImage,
+      image: primaryCrop.dataUrl,
       minConfidence,
-      preflight: analysisPreflight,
-      contextImages: extraImages,
+      preflight: primaryPreflight,
+      contextImages: [],
     });
     const researchFilteredSignal = applyPrecisionProfile(result.signal, precisionProfile);
     const auditGateStartedAt = performance.now();
     const gatedSignal = applyAuditEdgeGate(researchFilteredSignal);
     const auditGateMs = Math.round(performance.now() - auditGateStartedAt);
     const decisionAt = new Date().toISOString();
+
     setSignal(gatedSignal);
     setResponseTime(result.responseTimeMs);
-    const historyItem = createHistoryItem(gatedSignal, result.responseTimeMs, minConfidence);
-    setHistory((current) => [historyItem, ...current].slice(0, HISTORY_LIMIT));
+    setHistory((current) => [createHistoryItem(gatedSignal, result.responseTimeMs, minConfidence), ...current].slice(0, HISTORY_LIMIT));
 
-    const source: AuditSignalSource = primarySource === 'live'
-      ? 'live_tab'
-      : primarySource === 'paste'
-        ? 'paste'
-        : 'upload';
     void appendAuditSignal(createAuditSignalRecord({
       signal: gatedSignal,
       source,
@@ -392,73 +527,61 @@ function App() {
       expiryTimestamp: null,
       expirySeconds: null,
       payout: null,
-      outcome: gatedSignal.bias === 'NEUTRAL' ? 'NEUTRAL' : 'UNKNOWN',
+      outcome: 'NEUTRAL',
       feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
-      rawDataRef: null,
+      rawDataRef: primaryCrop ? artifacts.find((artifact) => artifact.role === 'primary')?.sha256 || null : null,
     })).catch(() => undefined);
 
+    const decisionMs = Date.parse(decisionAt);
+    const totalCaptureToDecision = Number.isFinite(capturedMs) && Number.isFinite(decisionMs)
+      ? Math.max(0, decisionMs - capturedMs)
+      : null;
+
+    const reproRecord: ReproDecisionRecord = {
+      schemaVersion: 'decision-record-v1',
+      recordId: newRecordId(),
+      configVersion: INPUT_PIPELINE_CONFIG_VERSION,
+      promptVersion: GROQ_PROMPT_VERSION,
+      modelName: GROQ_MODEL,
+      temperature: GROQ_TEMPERATURE,
+      seed: GROQ_SEED,
+      seedReason: 'Fixed before outcome analysis for best-effort reproducibility; Groq does not guarantee determinism.',
+      systemFingerprint: result.systemFingerprint,
+      capturedAt: auditMeta.capturedAt,
+      decisionAt,
+      source,
+      configuredTimeframe: 'M1',
+      layoutProfileVersion: LAYOUT_PROFILE_VERSION,
+      layoutReason: 'CALIBRATED_LAYOUT_AND_DETERMINISTIC_CHECKS_PASSED',
+      deterministicScreen: deterministic,
+      rawModelResponseText: result.rawApiResponseText,
+      modelCallSkippedReason: null,
+      preflight: primaryPreflight,
+      gateSnapshot: {
+        modelProposedBias: result.signal.proposedBias,
+        preAuditBias: researchFilteredSignal.bias,
+        finalBias: 'NEUTRAL',
+        finalReason: gatedSignal.gateReason || 'AUDIT_LOCK',
+      },
+      timingsMs: {
+        capture: auditMeta.captureMs,
+        preflight: primaryPreflightMs,
+        deterministicScreen: deterministicScreenMs,
+        aiCall: result.aiCallMs,
+        gates: result.gatesMs + auditGateMs,
+        totalCaptureToDecision,
+      },
+      nullReasons: {
+        entryPrice: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
+        payout: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
+        expiry: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
+      },
+      durableWrite: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
     try {
-      const primaryArtifact = await buildFullFrameArtifact(
-        'primary',
-        analysisImage,
-        auditMeta.capturedAt,
-        auditMeta.sourceFrameSize,
-      );
-      const contextArtifacts = await Promise.all(extraImages.map((contextImage) => (
-        buildFullFrameArtifact(`context_${contextImage.label}`, contextImage.image, null, null)
-      )));
-      const capturedMs = auditMeta.capturedAt ? Date.parse(auditMeta.capturedAt) : Number.NaN;
-      const decisionMs = Date.parse(decisionAt);
-      const totalCaptureToDecision = Number.isFinite(capturedMs) && Number.isFinite(decisionMs)
-        ? Math.max(0, decisionMs - capturedMs)
-        : null;
-
-      const reproRecord: ReproDecisionRecord = {
-        schemaVersion: 'decision-record-v1',
-        recordId: newRecordId(),
-        configVersion: 'input-pipeline-v1.0.0',
-        promptVersion: GROQ_PROMPT_VERSION,
-        modelName: GROQ_MODEL,
-        temperature: GROQ_TEMPERATURE,
-        seed: GROQ_SEED,
-        seedReason: 'Fixed before outcome analysis for best-effort reproducibility; Groq does not guarantee determinism.',
-        systemFingerprint: result.systemFingerprint,
-        capturedAt: auditMeta.capturedAt,
-        decisionAt,
-        source,
-        configuredTimeframe: 'M1',
-        layoutProfileVersion: null,
-        layoutReason: 'UNVERIFIED_LAYOUT: current production input is the full shared/uploaded frame; no calibrated crop profile has been activated.',
-        rawModelResponseText: result.rawApiResponseText,
-        preflight: analysisPreflight,
-        gateSnapshot: {
-          modelProposedBias: result.signal.proposedBias,
-          preAuditBias: researchFilteredSignal.bias,
-          finalBias: 'NEUTRAL',
-          finalReason: gatedSignal.gateReason || 'AUDIT_LOCK',
-        },
-        timingsMs: {
-          capture: auditMeta.captureMs,
-          preflight: auditMeta.preflightMs,
-          aiCall: result.aiCallMs,
-          gates: result.gatesMs + auditGateMs,
-          totalCaptureToDecision,
-        },
-        nullReasons: {
-          entryPrice: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
-          payout: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
-          expiry: 'STRUCTURED_SCREEN_FIELD_READER_NOT_IMPLEMENTED_STAGE4',
-          deterministicTimeframe: 'LAYOUT_UNVERIFIED_STAGE2_STOP',
-          deterministicAsset: 'LAYOUT_UNVERIFIED_STAGE2_STOP',
-        },
-        durableWrite: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-
-      const durable = await persistReproDecision(reproRecord, [primaryArtifact, ...contextArtifacts]);
-      if (!durable.durable) {
-        setError('Audit warning: decision remained NEUTRAL, but durable server audit storage failed. A local append-only copy was retained.');
-      }
+      await persistRecord(reproRecord);
     } catch (auditError) {
       setError(`Audit warning: decision remained NEUTRAL, but reproducibility logging failed: ${auditError instanceof Error ? auditError.message : 'unknown error'}`);
     }
@@ -878,19 +1001,10 @@ function App() {
                   🧪 BACKTEST LAB
                 </button>
 
-                <details className="group rounded-lg border border-slate-800 bg-slate-900/45">
-                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    <span>Context · M5 / H1</span>
-                    <span className="text-slate-600 group-open:rotate-90">›</span>
-                  </summary>
-                  <div className="border-t border-slate-800 p-2">
-                    <ContextImagesPanel
-                      images={contextImages}
-                      onUpload={handleContextUpload}
-                      onRemove={(label) => setContextImages((current) => ({ ...current, [label]: null }))}
-                    />
-                  </div>
-                </details>
+                <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-2.5">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-slate-500">Single-frame audit mode</div>
+                  <div className="mt-1 text-[9px] leading-relaxed text-slate-600">Independent M5/H1 uploads are disabled for decisions. All decision crops must come from one captured frame.</div>
+                </div>
 
                 <details className="group rounded-lg border border-slate-800 bg-slate-900/45">
                   <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -930,7 +1044,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.3 • Reproducible input records • AUDIT LOCK ON • NEUTRAL until proven</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.4 • Deterministic single-frame gate • AI blocked until verified M1 + asset • AUDIT LOCK ON</div></footer>
     </div>
   );
 }

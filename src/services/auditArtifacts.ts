@@ -42,15 +42,35 @@ export async function imageDimensions(dataUrl: string): Promise<{ width: number;
   });
 }
 
+export async function buildAuditArtifact(args: {
+  role: string;
+  dataUrl: string;
+  capturedAt: string | null;
+  cropRect: { x: number; y: number; width: number; height: number } | null;
+  sourceFrameSize: { width: number; height: number } | null;
+  sourceFrameSha256: string | null;
+}): Promise<AuditArtifact> {
+  const hash = await sha256DataUrl(args.dataUrl);
+  return {
+    role: args.role,
+    dataUrl: args.dataUrl,
+    sha256: hash.sha256,
+    mimeType: hash.mimeType,
+    byteLength: hash.byteLength,
+    cropRect: args.cropRect,
+    sourceFrameSize: args.sourceFrameSize,
+    sourceFrameSha256: args.sourceFrameSha256,
+    capturedAt: args.capturedAt,
+  };
+}
+
 export async function buildFullFrameArtifact(
   role: string,
   dataUrl: string,
   capturedAt: string | null,
-  sourceFrameSize?: { width: number; height: number } | null,
 ): Promise<AuditArtifact> {
   const hash = await sha256DataUrl(dataUrl);
   const dimensions = await imageDimensions(dataUrl);
-  const sourceSize = sourceFrameSize || dimensions;
   return {
     role,
     dataUrl,
@@ -58,7 +78,7 @@ export async function buildFullFrameArtifact(
     mimeType: hash.mimeType,
     byteLength: hash.byteLength,
     cropRect: { x: 0, y: 0, width: dimensions.width, height: dimensions.height },
-    sourceFrameSize: sourceSize,
+    sourceFrameSize: dimensions,
     sourceFrameSha256: hash.sha256,
     capturedAt,
   };

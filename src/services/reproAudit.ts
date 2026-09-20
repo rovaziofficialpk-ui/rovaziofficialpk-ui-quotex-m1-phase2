@@ -16,7 +16,9 @@ export interface ReproDecisionRecord {
   configuredTimeframe: 'M1';
   layoutProfileVersion: string | null;
   layoutReason: string;
-  rawModelResponseText: string;
+  deterministicScreen: unknown;
+  rawModelResponseText: string | null;
+  modelCallSkippedReason: string | null;
   preflight: unknown;
   gateSnapshot: {
     modelProposedBias: string;
@@ -27,7 +29,8 @@ export interface ReproDecisionRecord {
   timingsMs: {
     capture: number | null;
     preflight: number | null;
-    aiCall: number;
+    deterministicScreen: number | null;
+    aiCall: number | null;
     gates: number;
     totalCaptureToDecision: number | null;
   };

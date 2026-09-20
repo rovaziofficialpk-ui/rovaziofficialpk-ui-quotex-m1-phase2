@@ -1,0 +1,57 @@
+{
+  "version": "quotex-desktop-observed-v1.0.0",
+  "calibrationSource": {
+    "kind": "user_screen_recording",
+    "frames": 10,
+    "observedViewportWidth": 736,
+    "observedViewportHeight": 334,
+    "observedAspectRatio": 2.2036,
+    "outcomeDataUsed": false
+  },
+  "supportedAspectRatio": { "min": 2.15, "max": 2.26 },
+  "minimumSourceSize": { "width": 700, "height": 300 },
+  "regions": {
+    "primary": { "x": 0.04755435, "y": 0.12874251, "w": 0.83967391, "h": 0.87125749 },
+    "plotArea": { "x": 0.04755435, "y": 0.12874251, "w": 0.76766304, "h": 0.76946108 },
+    "zoomedNewest": { "x": 0.38, "y": 0.12874251, "w": 0.43521739, "h": 0.76946108 },
+    "priceAxis": { "x": 0.81521739, "y": 0.12874251, "w": 0.07201087, "h": 0.76946108 },
+    "timeAxis": { "x": 0.04755435, "y": 0.89820359, "w": 0.83967391, "h": 0.10179641 },
+    "assetLabel": { "x": 0.05978261, "y": 0.05389222, "w": 0.16304348, "h": 0.09580838 },
+    "tradePanel": { "x": 0.88722826, "y": 0.05389222, "w": 0.11277174, "h": 0.94610778 },
+    "payoutExpiryPanel": { "x": 0.88722826, "y": 0.05389222, "w": 0.11277174, "h": 0.43413174 },
+    "timeframeLabel": null
+  },
+  "cropEncoding": {
+    "primary": { "type": "image/jpeg", "quality": 0.95, "upscale": 1, "interpolation": "high-quality-bilinear" },
+    "zoomedNewest": { "type": "image/jpeg", "quality": 0.95, "upscale": 1, "interpolation": "high-quality-bilinear" },
+    "smallFields": { "type": "image/png", "upscale": 3, "interpolation": "nearest-neighbor" }
+  },
+  "completenessRules": {
+    "minimumCandles": 12,
+    "maximumCandles": 80,
+    "minimumCombinedCandleColorRatio": 0.015,
+    "minimumRightPanelGreenRatio": 0.015,
+    "minimumRightPanelRedRatio": 0.015,
+    "minimumCurrentPriceBlueRatio": 0.005,
+    "minimumHorizontalMarkerRowRatio": 0.15,
+    "maximumNearBlackOuterEdgeRatio": 0.35,
+    "lastCandleXFractionMin": 0.45,
+    "lastCandleXFractionMax": 0.80
+  },
+  "timeframeVerification": {
+    "configured": "M1",
+    "status": "UNVERIFIED",
+    "reason": "NO_EXPLICIT_TIMEFRAME_LABEL_VISIBLE_IN_10_CALIBRATION_FRAMES"
+  },
+  "assetVerification": {
+    "configuredAsset": null,
+    "status": "UNVERIFIED",
+    "reason": "NO_CONFIGURED_ASSET_AND_NO_CALIBRATED_DETERMINISTIC_TEXT_READER"
+  },
+  "notes": [
+    "Coordinates were calibrated from ten real frames from the user's saved Quotex recording.",
+    "No trade outcomes were used.",
+    "The right trade-panel 00:01:00 field is an expiry/timer and is not accepted as chart-timeframe evidence.",
+    "This profile intentionally fails closed before AI until timeframe and asset can be deterministically verified."
+  ]
+}

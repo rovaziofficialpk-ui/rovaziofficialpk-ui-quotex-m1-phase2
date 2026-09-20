@@ -1,0 +1,31 @@
+{
+  "version": "input-pipeline-v1.1.0",
+  "auditLock": true,
+  "configuredTimeframe": "M1",
+  "configuredAsset": null,
+  "layoutProfileVersion": "quotex-desktop-observed-v1.0.0",
+  "layoutCalibrationFrames": 10,
+  "productionCroppingEnabled": true,
+  "aiRequiresDeterministicPass": true,
+  "sameFrameOnly": true,
+  "minimumHistoryCandles": 12,
+  "maximumHistoryCandles": 80,
+  "ai": {
+    "model": "qwen/qwen3.8-27b",
+    "promptVersion": "vision-signal-v4.0.0",
+    "temperature": 0,
+    "seed": 424242,
+    "reasoningEffort": "none"
+  },
+  "stopState": {
+    "active": true,
+    "reasonCodes": [
+      "TIMEFRAME_UNVERIFIED",
+      "ASSET_UNVERIFIED",
+      "PRICE_AXIS_UNREADABLE",
+      "TIME_AXIS_UNREADABLE"
+    ],
+    "effect": "NO_AI_CALL_AND_FINAL_NEUTRAL"
+  },
+  "outcomeDataUsedForRules": false
+}
