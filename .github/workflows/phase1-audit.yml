@@ -74,6 +74,12 @@ jobs:
           set -o pipefail
           node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
 
+      - name: Server integration probes
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-server-integration.mjs | tee phase1-server-integration.json
+
       - name: Mutation sensitivity
         shell: bash
         run: |
