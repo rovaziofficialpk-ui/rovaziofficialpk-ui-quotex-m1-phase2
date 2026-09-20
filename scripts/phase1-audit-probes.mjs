@@ -25,6 +25,7 @@ const files = {
   storageSource: fs.readFileSync('src/services/storage.ts','utf8'),
   imagePreflightSource: fs.readFileSync('src/services/imagePreflight.ts','utf8'),
   outcomePanelSource: fs.readFileSync('src/components/OutcomeResolverPanel.tsx','utf8'),
+  exportHistorySource: fs.readFileSync('src/utils/exportHistory.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -537,4 +538,50 @@ findings.push({
   evidence: 'The scheduled expiry callback captures the render-time busy value, but busy is not an effect dependency. A manual Capture now operation can race the already-scheduled timer and create duplicate expiry captures/events.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v14', findings }, null, 2));
+
+findings.push({
+  id:'R1-HISTORY-EXPORT-EXPOSES-DIRECTION',
+  status: /'finalBias', 'proposedBias'/.test(files.exportHistorySource)
+    && /item\.proposedBias/.test(files.exportHistorySource)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'History CSV export explicitly includes proposedBias and JSON export serializes the full gated signal object. A live final NEUTRAL can therefore still export model-proposed CALL/PUT while AUDIT LOCK is on.',
+});
+
+findings.push({
+  id:'R4-DECISION-RECORD-MISSING-RUNTIME-GATE-PARAMETERS',
+  status: !/minConfidence:/.test(files.repro)
+    && !/precisionProfile/.test(files.repro)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'ReproDecisionRecord does not store minConfidence or the applied precision-profile rule/version, even though both can affect pre-audit gate output. Exact gate replay is therefore under-specified.',
+});
+
+findings.push({
+  id:'BACKTEST-UNKNOWN-DATA-HARDCODED-AS-M1-IN-IMAGE',
+  status: /timeframeStatus === 'not_m1'/.test(files.backtest)
+    && /\$\{pair\}  •  M1/.test(files.backtestService)
+    && /Historical replay • 1-minute candles/.test(files.backtestService)
+    ? 'CONFIRMED_GUESS'
+    : 'UNVERIFIED',
+  evidence: 'Backtest allows timeframeStatus=unknown, but renderBacktestChart always writes M1 and "1-minute candles" into the image sent to the model. Unknown timeframe is therefore converted into asserted M1 visual evidence.',
+});
+
+findings.push({
+  id:'BACKTEST-LOCAL-TIMEZONE-RENDERING',
+  status: /toLocaleTimeString\(\[\], \{ hour: '2-digit', minute: '2-digit', hour12: false \}\)/.test(files.backtestService)
+    ? 'CONFIRMED_REPRODUCIBILITY_GAP'
+    : 'UNVERIFIED',
+  evidence: 'Backtest chart time labels are rendered with the host browser local timezone/locale, so the same timestamp dataset can generate different model images on different machines. The run export does not record timezone/locale.',
+});
+
+findings.push({
+  id:'BACKTEST-PAIR-MARKET-PROVENANCE-UNVERIFIED',
+  status: /renderBacktestChart\(window, displayPair, decision\.timeLabel\)/.test(files.backtest)
+    && /market,\s*decision,\s*expiry/.test(files.backtest)
+    ? 'CONFIRMED_WEAK'
+    : 'UNVERIFIED',
+  evidence: 'The selected pair/FOREX-vs-OTC label is user-provided and rendered/stored, but the CSV parser has no dataset provenance field that verifies the candles actually belong to that pair or market.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v15', findings }, null, 2));
