@@ -33,27 +33,55 @@ jobs:
         run: npm install
 
       - name: Baseline tests
-        run: npm test | tee phase1-baseline-tests.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test | tee phase1-baseline-tests.txt
+
+      - name: Production-runtime audit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --loader ./tests/phase1-ts-loader.mjs --test tests/phase1-production-runtime.audit.mjs | tee phase1-production-runtime.txt
 
       - name: Strict TypeScript
-        run: npm run typecheck | tee phase1-typecheck.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck | tee phase1-typecheck.txt
 
       - name: Coverage summary
-        run: node --test --experimental-test-coverage tests/*.test.mjs | tee phase1-coverage.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test --experimental-test-coverage tests/*.test.mjs | tee phase1-coverage.txt
 
       - name: Production build
-        run: npm run build | tee phase1-build.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build | tee phase1-build.txt
 
       - name: Adversarial probes
-        run: node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
 
       - name: Mutation sensitivity
-        run: node scripts/phase1-mutation-check.mjs | tee phase1-mutations.json
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-mutation-check.mjs | tee phase1-mutations.json
 
       - name: Client bundle secret scan
         shell: bash
         run: |
           set +e
+          if [ ! -d dist ]; then
+            echo "DIST_MISSING_BUILD_NOT_PROVEN" | tee phase1-secret-scan.txt
+            exit 1
+          fi
           grep -R -n -E 'gsk_[A-Za-z0-9_-]+|GROQ_API_KEY|AUDIT_AUTH_TOKEN|sk-[A-Za-z0-9_-]{20,}' dist > phase1-secret-scan.txt
           status=$?
           if [ "$status" -eq 0 ]; then
