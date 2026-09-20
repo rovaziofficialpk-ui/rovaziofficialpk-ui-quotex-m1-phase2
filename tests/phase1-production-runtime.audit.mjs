@@ -378,3 +378,41 @@ test('outcome summary agreement, null rate and known-return mean match reference
   assert.equal(s.meanUnitReturnKnown, -0.033333);
   assert.equal(s.fullSampleExpectancy, null);
 });
+
+
+test('R1 whole-app counterexample: backtest row preserves a directional CALL under audit lock', () => {
+  const directional = signalLogic.applySignalGate(modelPayload({
+    bias:'CALL',
+    confidence:95,
+    trend:'bullish',
+    momentum:'bullish',
+    structure:'bullish',
+    candleSignal:'bullish',
+  }), 70, '{}', { score:100, status:'pass' }, 0);
+  assert.equal(directional.bias, 'CALL');
+
+  const decision = { timestamp:0, timeLabel:'00:00', open:1, high:1.1, low:0.9, close:1.0 };
+  const expiry = { timestamp:60000, timeLabel:'00:01', open:1, high:1.2, low:0.95, close:1.1 };
+  const row = backtest.createBacktestRow({
+    index:0,
+    pair:'EUR/USD',
+    market:'FOREX',
+    decision,
+    expiry,
+    signal:directional,
+    responseTimeMs:1,
+  });
+  assert.equal(row.bias, 'CALL');
+  assert.equal(row.outcome, 'WIN');
+});
+
+test('client validator is not equivalent to its declared strict schema', () => {
+  const extra = signalLogic.validateModelSignal(JSON.stringify(modelPayload({ injectedExtraField:'x' })));
+  assert.equal(extra.bias, 'CALL');
+
+  const stringConfidence = signalLogic.validateModelSignal(JSON.stringify(modelPayload({ confidence:'80' })));
+  assert.equal(stringConfidence.confidence, 80);
+
+  const clamped = signalLogic.validateModelSignal(JSON.stringify(modelPayload({ confidence:1000 })));
+  assert.equal(clamped.confidence, 100);
+});
