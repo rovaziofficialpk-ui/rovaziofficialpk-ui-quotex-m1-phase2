@@ -156,12 +156,14 @@ export function validateDecisionRecord(record) {
     && (record.capturedAt === null || isIso(record.capturedAt))
     && isIso(record.decisionAt)
     && ['live_tab', 'upload', 'paste'].includes(record.source)
+    && (record.captureEnvironment === null || isPlainObject(record.captureEnvironment))
     && record.configuredTimeframe === 'M1'
     && nullableString(record.layoutProfileVersion)
     && typeof record.layoutReason === 'string'
     && isPlainObject(record.deterministicScreen)
     && nullableString(record.rawModelResponseText)
     && nullableString(record.modelCallSkippedReason)
+    && (record.preflight === null || isPlainObject(record.preflight))
     && validateGateSnapshot(record.gateSnapshot)
     && validateTimings(record.timingsMs)
     && validateNullReasons(record.nullReasons)
@@ -225,9 +227,51 @@ export function canonicalHashPayload(record) {
 
 const queues = new Map();
 
+async function acquireFileLock(file) {
+  const lockDir = file + '.write-lock';
+  const started = Date.now();
+  for (;;) {
+    try {
+      await fs.mkdir(lockDir);
+      return async () => {
+        await fs.rm(lockDir, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      try {
+        const stat = await fs.stat(lockDir);
+        if (Date.now() - stat.mtimeMs > 30_000) {
+          await fs.rm(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch (statError) {
+        if (statError?.code !== 'ENOENT') throw statError;
+      }
+      if (Date.now() - started > 10_000) {
+        throw Object.assign(new Error('AUDIT_WRITE_LOCK_TIMEOUT'), { statusCode: 503 });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+}
+
 export async function withSerializedFileWrite(file, task) {
   const prior = queues.get(file) || Promise.resolve();
-  const next = prior.then(task, task);
+  const next = prior.then(async () => {
+    const release = await acquireFileLock(file);
+    try {
+      return await task();
+    } finally {
+      await release();
+    }
+  }, async () => {
+    const release = await acquireFileLock(file);
+    try {
+      return await task();
+    } finally {
+      await release();
+    }
+  });
   queues.set(file, next);
   try {
     return await next;
