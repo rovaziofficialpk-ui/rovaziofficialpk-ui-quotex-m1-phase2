@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.5.0-stage11-outcome-resolver",
+  "version": "0.5.1-timeframe-diagnostics-v2",
   "private": true,
   "type": "module",
   "scripts": {
