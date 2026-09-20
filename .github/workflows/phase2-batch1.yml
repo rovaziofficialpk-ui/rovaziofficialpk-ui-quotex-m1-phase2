@@ -35,6 +35,24 @@ jobs:
       - name: Fresh dependency install
         run: npm install
 
+      - name: Dependency audit evidence
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > batch1-npm-audit.json
+          code=$?
+          node - <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('batch1-npm-audit.json','utf8'));
+          console.log(JSON.stringify({
+            vulnerabilities: p.metadata?.vulnerabilities || null,
+            advisories: Object.entries(p.vulnerabilities || {}).map(([name,v]) => ({
+              name, severity:v.severity, isDirect:v.isDirect, via:v.via, effects:v.effects, range:v.range, fixAvailable:v.fixAvailable
+            }))
+          }, null, 2));
+          NODE
+          echo "npm_audit_exit=$code"
+
       - name: Baseline and Batch 1 tests
         shell: bash
         run: |
@@ -118,4 +136,5 @@ jobs:
             batch1-*.txt
             batch1-*.json
             phase1-probes.json
+            batch1-npm-audit.json
           if-no-files-found: error
