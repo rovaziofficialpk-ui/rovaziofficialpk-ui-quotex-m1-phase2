@@ -18,6 +18,7 @@ const files = {
   phases: fs.readFileSync('PHASES.md','utf8'),
   stage3bReport: fs.readFileSync('STAGE3B_VERIFICATION_REPORT.md','utf8'),
   stage3cReport: fs.readFileSync('STAGE3C_REPORT.md','utf8'),
+  auditSignalLogSource: fs.readFileSync('src/services/auditSignalLog.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -435,4 +436,14 @@ findings.push({
   evidence: 'Backtest unauthenticated error tells the user to add a browser Groq API key, but current architecture uses a server key plus audit authentication.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v8', findings }, null, 2));
+
+findings.push({
+  id:'R5-AUDIT-SIGNAL-UNKNOWN-STRING-DEFAULTS',
+  status: /asset: args\.signal\.pair \|\| 'Unknown Asset'/.test(files.auditSignalLogSource)
+    && /feed: args\.feed \|\| 'Unknown feed'/.test(files.auditSignalLogSource)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: "The signal audit schema substitutes human strings such as 'Unknown Asset'/'Unknown feed' rather than keeping unavailable fields null with a reason code.",
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v9', findings }, null, 2));
