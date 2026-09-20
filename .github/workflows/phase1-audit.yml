@@ -1,0 +1,70 @@
+name: Phase 1 independent audit
+
+on:
+  push:
+    branches:
+      - audit/phase1-e2e-20260920
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          git rev-parse HEAD
+          git status --short
+          test -f package-lock.json && echo "LOCKFILE=PRESENT" || echo "LOCKFILE=MISSING"
+          node -e "const p=require('./package.json'); console.log('LINT_SCRIPT='+(p.scripts?.lint||'NOT_CONFIGURED'))"
+
+      - name: Fresh dependency install
+        run: npm install
+
+      - name: Baseline tests
+        run: npm test | tee phase1-baseline-tests.txt
+
+      - name: Strict TypeScript
+        run: npm run typecheck | tee phase1-typecheck.txt
+
+      - name: Coverage summary
+        run: node --test --experimental-test-coverage tests/*.test.mjs | tee phase1-coverage.txt
+
+      - name: Production build
+        run: npm run build | tee phase1-build.txt
+
+      - name: Adversarial probes
+        run: node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
+
+      - name: Mutation sensitivity
+        run: node scripts/phase1-mutation-check.mjs | tee phase1-mutations.json
+
+      - name: Client bundle secret scan
+        shell: bash
+        run: |
+          set +e
+          grep -R -n -E 'gsk_[A-Za-z0-9_-]+|GROQ_API_KEY|AUDIT_AUTH_TOKEN|sk-[A-Za-z0-9_-]{20,}' dist > phase1-secret-scan.txt
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "SECRET_PATTERN_MATCHES_FOUND"
+            cat phase1-secret-scan.txt
+            exit 1
+          fi
+          echo "NO_SECRET_PATTERN_MATCHES" | tee phase1-secret-scan.txt
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-audit-evidence
+          path: |
+            phase1-*.txt
+            phase1-*.json
