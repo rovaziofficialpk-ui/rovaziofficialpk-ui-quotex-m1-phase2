@@ -1,8 +1,8 @@
 {
   "version": "stage3d-session-manifest-v2",
   "frozenSpec": {
-    "specId": "stage3d-spec-v1",
-    "configVersion": "input-pipeline-v1.4.0",
+    "specId": "stage3d-spec-v2",
+    "configVersion": "input-pipeline-v1.6.0",
     "layoutVersion": "quotex-desktop-observed-v1.3.0",
     "templateVersions": {
       "timeframe": "quotex-1m-template-v1",
@@ -22,7 +22,25 @@
       "priceAxisMaximumPriceStepCv": 0.1,
       "ocrMinimumTokenConfidence": 70
     },
-    "frozenDate": "2026-09-20"
+    "frozenDate": "2026-09-20",
+    "matcherVersions": {
+      "timeframe": "quotex-1m-matcher-v2"
+    },
+    "timeframeMatcher": {
+      "canonicalTemplateSize": [
+        27,
+        29
+      ],
+      "fixedScaleSearch": [
+        0.75,
+        0.9,
+        1,
+        1.1,
+        1.25,
+        1.5
+      ],
+      "candidateNormalization": "undo_3x_audit_upscale_to_source_pixels_before_matching"
+    }
   },
   "specHistory": [
     {
@@ -45,6 +63,22 @@
         "condition reporting"
       ],
       "note": "Current frozen Stage 3D specification."
+    },
+    {
+      "specId": "stage3d-spec-v2",
+      "configVersion": "input-pipeline-v1.6.0",
+      "layoutVersion": "quotex-desktop-observed-v1.3.0",
+      "acceptanceResultsSeen": false,
+      "invalidatedAcceptanceSessionIds": [],
+      "changedFields": [
+        "timeframe badge matcher geometry",
+        "timeframe failure sub-reasons",
+        "failed-crop diagnostic thumbnails",
+        "native PNG retention for timeframe rejects",
+        "capture environment logging"
+      ],
+      "acceptanceSessionsAffected": 0,
+      "note": "No untouched acceptance sessions existed, so the spec change affects zero acceptance sessions. Thresholds and AND logic are unchanged."
     }
   ],
   "sessions": [
