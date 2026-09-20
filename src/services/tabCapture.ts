@@ -3,6 +3,21 @@ export interface LiveTabInfo {
   displaySurface: string;
 }
 
+export interface CaptureEnvironment {
+  videoWidth: number;
+  videoHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+  cssViewportWidth: number;
+  cssViewportHeight: number;
+  devicePixelRatio: number;
+  visualViewportScale: number | null;
+  capturePixelsPerCssPixelX: number | null;
+  capturePixelsPerCssPixelY: number | null;
+  browserZoomPercent: number | null;
+  browserZoomDetection: 'NOT_RELIABLY_DETECTABLE_WITH_STANDARD_BROWSER_APIS';
+}
+
 export interface CapturedLiveFrame {
   dataUrl: string;
   capturedAt: string;
@@ -11,6 +26,7 @@ export interface CapturedLiveFrame {
   sourceHeight: number;
   outputWidth: number;
   outputHeight: number;
+  environment: CaptureEnvironment;
 }
 
 const PREFERRED_CAPTURE_WIDTH = 2560;
@@ -128,6 +144,28 @@ export async function captureLiveTabFrameDetailed(stream: MediaStream): Promise<
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const capturedAt = new Date().toISOString();
     const dataUrl = canvas.toDataURL('image/png');
+    const cssViewportWidth = Math.max(0, window.innerWidth || 0);
+    const cssViewportHeight = Math.max(0, window.innerHeight || 0);
+    const environment: CaptureEnvironment = {
+      videoWidth: sourceWidth,
+      videoHeight: sourceHeight,
+      outputWidth: canvas.width,
+      outputHeight: canvas.height,
+      cssViewportWidth,
+      cssViewportHeight,
+      devicePixelRatio: Number((window.devicePixelRatio || 1).toFixed(3)),
+      visualViewportScale: window.visualViewport?.scale
+        ? Number(window.visualViewport.scale.toFixed(3))
+        : null,
+      capturePixelsPerCssPixelX: cssViewportWidth > 0
+        ? Number((sourceWidth / cssViewportWidth).toFixed(3))
+        : null,
+      capturePixelsPerCssPixelY: cssViewportHeight > 0
+        ? Number((sourceHeight / cssViewportHeight).toFixed(3))
+        : null,
+      browserZoomPercent: null,
+      browserZoomDetection: 'NOT_RELIABLY_DETECTABLE_WITH_STANDARD_BROWSER_APIS',
+    };
     return {
       dataUrl,
       capturedAt,
@@ -136,6 +174,7 @@ export async function captureLiveTabFrameDetailed(stream: MediaStream): Promise<
       sourceHeight,
       outputWidth: canvas.width,
       outputHeight: canvas.height,
+      environment,
     };
   } finally {
     video.pause();
