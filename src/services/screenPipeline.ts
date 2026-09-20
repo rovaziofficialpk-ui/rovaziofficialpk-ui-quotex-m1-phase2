@@ -1,7 +1,7 @@
 import type { TradeSignal } from '../signalLogic';
 
-export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.4.0';
-export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.5.0';
+export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.5.0';
+export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.6.0';
 export const LAYOUT_PROFILE_VERSION = 'quotex-desktop-observed-v1.3.0';
 
 export type ScreenReasonCode =
