@@ -23,6 +23,8 @@ const files = {
   screenPipelineSource: fs.readFileSync('src/services/screenPipeline.ts','utf8'),
   historyPanelSource: fs.readFileSync('src/components/HistoryPanel.tsx','utf8'),
   storageSource: fs.readFileSync('src/services/storage.ts','utf8'),
+  imagePreflightSource: fs.readFileSync('src/services/imagePreflight.ts','utf8'),
+  outcomePanelSource: fs.readFileSync('src/components/OutcomeResolverPanel.tsx','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -496,6 +498,43 @@ findings.push({
     ? 'CONFIRMED_FAIL'
     : 'UNVERIFIED',
   evidence: 'Backtest JSON export contains exportedAt, summary and rows only. It omits config/spec version, model/prompt version, minConfidence, source dataset hash and other run parameters required for exact replay.',
+});
+
+
+findings.push({
+  id:'OUTCOME-INVALID-DIRECTION-FALLS-THROUGH-AS-PUT',
+  status: /else outcome = expiry < entry \? 'WIN' : 'LOSS'/.test(files.outcomeResolverSource)
+    && !/direction !== 'CALL'.*direction !== 'PUT'|\['CALL','PUT'\].*direction/.test(files.outcomeResolverSource)
+    ? 'CONFIRMED_FAIL_OPEN_IN_RESOLVER'
+    : 'UNVERIFIED',
+  evidence: "resolveOutcome branches CALL vs else; an invalid runtime direction such as SIDEWAYS falls into the PUT branch. This is reachable because the server outcome endpoint accepts arbitrary direction payloads.",
+});
+
+findings.push({
+  id:'MANUAL-ANALYZE-REENTRY-GUARD',
+  status: /const canAnalyze = Boolean\([\s\S]*?apiKey\.trim\(\)[\s\S]*?!preflightLoading[\s\S]*?!autoTestEnabled/.test(files.app)
+    && !/const canAnalyze = Boolean\([\s\S]*?!analyzing/.test(files.app)
+    ? 'CONFIRMED_RACE_RISK'
+    : 'UNVERIFIED',
+  evidence: 'The Analyze button eligibility does not include !analyzing and there is no manual busy ref, so repeated manual clicks can overlap analysis/audit operations.',
+});
+
+findings.push({
+  id:'PREFLIGHT-NO-STABLE-REASON-CODE',
+  status: /export interface ImagePreflightResult \{[\s\S]*?warnings: string\[\];[\s\S]*?\}/.test(files.imagePreflightSource)
+    && !/reasonCode/.test(files.imagePreflightSource)
+    ? 'CONFIRMED_R8_GAP'
+    : 'UNVERIFIED',
+  evidence: 'Preflight exposes status/score/warnings but no stable reasonCode; blocked blank/blurred frames therefore cannot be durably classified with a specific machine-readable failure code.',
+});
+
+findings.push({
+  id:'OUTCOME-TIMER-STALE-BUSY-CLOSURE',
+  status: /setTimeout\(\(\) => \{ void resolvePending\(pending\.tradeId\); \}, delay\)/.test(files.outcomePanelSource)
+    && /if \(!trade \|\| trade\.expiry \|\| !liveTabActive \|\| busy\) return;/.test(files.outcomePanelSource)
+    ? 'CONFIRMED_RACE_RISK'
+    : 'UNVERIFIED',
+  evidence: 'The scheduled expiry callback captures the render-time busy value, but busy is not an effect dependency. A manual Capture now operation can race the already-scheduled timer and create duplicate expiry captures/events.',
 });
 
 console.log(JSON.stringify({ probeVersion:'phase1-v14', findings }, null, 2));
