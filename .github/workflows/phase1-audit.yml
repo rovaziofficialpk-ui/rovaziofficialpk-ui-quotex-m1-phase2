@@ -1,0 +1,136 @@
+name: Phase 1 independent audit
+
+on:
+  push:
+    branches:
+      - audit/phase1-e2e-20260920
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          git rev-parse HEAD
+          git status --short
+          test -f package-lock.json && echo "LOCKFILE=PRESENT" || echo "LOCKFILE=MISSING"
+          node -e "const p=require('./package.json'); console.log('LINT_SCRIPT='+(p.scripts?.lint||'NOT_CONFIGURED'))"
+
+      - name: Fresh dependency install
+        run: npm install
+
+      - name: Baseline tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test | tee phase1-baseline-tests.txt
+
+      - name: Production-runtime audit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --loader ./tests/phase1-ts-loader.mjs --test tests/phase1-production-runtime.audit.mjs | tee phase1-production-runtime.txt
+
+      - name: Strict TypeScript
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck | tee phase1-typecheck.txt
+
+      - name: Existing-suite coverage summary
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test --experimental-test-coverage tests/*.test.mjs | tee phase1-coverage.txt
+
+      - name: Production-module coverage summary
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --loader ./tests/phase1-ts-loader.mjs --experimental-test-coverage --test tests/phase1-production-runtime.audit.mjs | tee phase1-production-coverage.txt
+
+      - name: Production build
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build | tee phase1-build.txt
+
+      - name: Adversarial probes
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
+
+      - name: Server integration probes
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-server-integration.mjs | tee phase1-server-integration.json
+
+      - name: Mutation sensitivity
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-mutation-check.mjs | tee phase1-mutations.json
+
+      - name: Git history secret-pattern scan
+        shell: bash
+        run: |
+          set -o pipefail
+          : > phase1-history-secret-scan.txt
+          found=0
+          while read -r rev; do
+            matches="$(git grep -n -I -E 'gsk_[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|qa_[A-Za-z0-9_-]{32,}' "$rev" -- . 2>/dev/null || true)"
+            if [ -n "$matches" ]; then
+              echo "REV $rev" >> phase1-history-secret-scan.txt
+              echo "$matches" >> phase1-history-secret-scan.txt
+              found=1
+            fi
+          done < <(git rev-list --all)
+          if [ "$found" -ne 0 ]; then
+            echo "HISTORY_SECRET_PATTERN_MATCHES_FOUND"
+            cat phase1-history-secret-scan.txt
+            exit 1
+          fi
+          echo "NO_SECRET_PATTERN_MATCHES_IN_GIT_HISTORY" | tee phase1-history-secret-scan.txt
+
+      - name: Client bundle secret scan
+        shell: bash
+        run: |
+          set +e
+          if [ ! -d dist ]; then
+            echo "DIST_MISSING_BUILD_NOT_PROVEN" | tee phase1-secret-scan.txt
+            exit 1
+          fi
+          grep -R -n -E 'gsk_[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}' dist > phase1-secret-scan.txt
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "SECRET_PATTERN_MATCHES_FOUND"
+            cat phase1-secret-scan.txt
+            exit 1
+          fi
+          echo "NO_SECRET_PATTERN_MATCHES" | tee phase1-secret-scan.txt
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-audit-evidence
+          path: |
+            phase1-*.txt
+            phase1-*.json
