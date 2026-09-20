@@ -698,4 +698,4 @@ findings.push({
   evidence: 'verifyPriceAxis detects a blue current-price occlusion band, drops OCR labels inside that band, and can still mark the axis readable from the remaining labels. The requested E4 contract says occlusion must be rejected, not repaired/excluded.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v18', findings }, null, 2));
+console.log(JSON.stringify({ probeVersion:'phase1-batch1-regression-v1', findings }, null, 2));
