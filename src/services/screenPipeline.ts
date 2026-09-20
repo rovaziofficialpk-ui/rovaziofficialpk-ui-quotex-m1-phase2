@@ -211,7 +211,7 @@ function candleColumnGroups(data: ImageData): { count: number; lastXFraction: nu
       start = null;
     }
   }
-  const last = groups.at(-1);
+  const last = groups.length ? groups[groups.length - 1] : undefined;
   return {
     count: groups.length,
     lastXFraction: last ? ((last.start + last.end) / 2) / data.width : null,
