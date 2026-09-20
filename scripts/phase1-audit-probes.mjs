@@ -584,4 +584,21 @@ findings.push({
   evidence: 'The selected pair/FOREX-vs-OTC label is user-provided and rendered/stored, but the CSV parser has no dataset provenance field that verifies the candles actually belong to that pair or market.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v15', findings }, null, 2));
+
+findings.push({
+  id:'AUTOTEST-AIRUNS-COUNTS-PREMODEL-REJECTS',
+  status: /autoLastAiAtRef\.current = Date\.now\(\);[\s\S]*?const resultSignal = await executeAiAnalysis[\s\S]*?aiRuns: current\.aiRuns \+ 1/.test(files.app)
+    ? 'CONFIRMED_STATISTICS_BUG'
+    : 'UNVERIFIED',
+  evidence: 'Auto Test increments aiRuns after executeAiAnalysis returns even when that function returned a deterministic NEUTRAL before any Groq request. The UI counter is therefore not a reliable model-call count.',
+});
+
+findings.push({
+  id:'AUTOTEST-COOLDOWN-STARTS-BEFORE-MODEL-CALL',
+  status: /autoLastAiAtRef\.current = Date\.now\(\);[\s\S]*?await executeAiAnalysis/.test(files.app)
+    ? 'CONFIRMED_BEHAVIOR_BUG'
+    : 'UNVERIFIED',
+  evidence: 'The AI cooldown timestamp is set before deterministic verification inside executeAiAnalysis. A pre-model reject therefore starts the 15s AI cooldown and can cause later changed frames to be skipped even though no AI request occurred.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v16', findings }, null, 2));
