@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.4.1-phase4a1-precision",
+  "version": "0.4.2-phase4a2-audit-lock",
   "private": true,
   "type": "module",
   "scripts": {

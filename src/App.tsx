@@ -21,6 +21,8 @@ import {
 } from './services/autoTest';
 import { analyzeChartWithGroq, humanizeGroqError, testGroqConnection, type ContextImage, type ContextLabel } from './services/groq';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
+import { applyAuditEdgeGate } from './services/edgeGate';
+import { appendAuditSignal, createAuditSignalRecord, type AuditSignalSource } from './services/auditSignalLog';
 import {
   applyPrecisionProfile,
   loadPrecisionProfile,
@@ -203,7 +205,7 @@ function App() {
     }
   };
 
-  const captureFreshLiveFrame = async (): Promise<{ image: string; preflight: ImagePreflightResult }> => {
+  const captureFreshLiveFrame = async (): Promise<{ image: string; preflight: ImagePreflightResult; capturedAt: string }> => {
     const stream = liveStreamRef.current;
     if (!isLiveTabStreamActive(stream)) {
       throw new Error('Live tab sharing has stopped. Add the chart tab again before analysis.');
@@ -212,8 +214,9 @@ function App() {
     setLiveTabBusy(true);
     try {
       const dataUrl = await captureLiveTabFrame(stream as MediaStream);
+      const capturedAt = new Date().toISOString();
       const result = await inspectPrimaryFrame(dataUrl, 'live');
-      return { image: dataUrl, preflight: result };
+      return { image: dataUrl, preflight: result, capturedAt };
     } finally {
       setLiveTabBusy(false);
     }
@@ -315,7 +318,11 @@ function App() {
     }
   };
 
-  const executeAiAnalysis = async (analysisImage: string, analysisPreflight: ImagePreflightResult): Promise<TradeSignal> => {
+  const executeAiAnalysis = async (
+    analysisImage: string,
+    analysisPreflight: ImagePreflightResult,
+    capturedAt: string | null = null,
+  ): Promise<TradeSignal> => {
     const extraImages: ContextImage[] = (['M5', 'H1'] as ContextLabel[])
       .filter((label) => Boolean(contextImages[label]))
       .map((label) => ({ label, image: contextImages[label] as string }));
@@ -327,11 +334,34 @@ function App() {
       preflight: analysisPreflight,
       contextImages: extraImages,
     });
-    const gatedSignal = applyPrecisionProfile(result.signal, precisionProfile);
+    const researchFilteredSignal = applyPrecisionProfile(result.signal, precisionProfile);
+    const gatedSignal = applyAuditEdgeGate(researchFilteredSignal);
+    const decisionAt = new Date().toISOString();
     setSignal(gatedSignal);
     setResponseTime(result.responseTimeMs);
     const historyItem = createHistoryItem(gatedSignal, result.responseTimeMs, minConfidence);
     setHistory((current) => [historyItem, ...current].slice(0, HISTORY_LIMIT));
+
+    const source: AuditSignalSource = primarySource === 'live'
+      ? 'live_tab'
+      : primarySource === 'paste'
+        ? 'paste'
+        : 'upload';
+    void appendAuditSignal(createAuditSignalRecord({
+      signal: gatedSignal,
+      source,
+      capturedAt,
+      decisionAt,
+      entryPrice: null,
+      entryTimestamp: null,
+      expiryTimestamp: null,
+      expirySeconds: null,
+      payout: null,
+      outcome: gatedSignal.bias === 'NEUTRAL' ? 'NEUTRAL' : 'UNKNOWN',
+      feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
+      rawDataRef: null,
+    })).catch(() => undefined);
+
     return gatedSignal;
   };
 
@@ -398,6 +428,7 @@ function App() {
 
     try {
       const frame = await captureLiveTabFrame(stream as MediaStream);
+      const capturedAt = new Date().toISOString();
       const fingerprint = await buildAutoFrameFingerprint(frame);
       const baseline = autoBaselineRef.current;
       const change = baseline
@@ -448,7 +479,7 @@ function App() {
       setAnalysisStage('ai');
       setAutoStats((current) => ({ ...current, status: 'analyzing' }));
       autoLastAiAtRef.current = Date.now();
-      const resultSignal = await executeAiAnalysis(frame, quality);
+      const resultSignal = await executeAiAnalysis(frame, quality, capturedAt);
       setError('');
       autoBaselineRef.current = fingerprint;
       autoConsecutiveErrorsRef.current = 0;
@@ -514,6 +545,7 @@ function App() {
     try {
       let analysisImage = image;
       let analysisPreflight = preflight;
+      let capturedAt: string | null = null;
 
       if (liveTabActive) {
         setAnalysisStage('capturing');
@@ -521,6 +553,7 @@ function App() {
         const freshFrame = await captureFreshLiveFrame();
         analysisImage = freshFrame.image;
         analysisPreflight = freshFrame.preflight;
+        capturedAt = freshFrame.capturedAt;
       }
 
       setAnalysisStage('preflight');
@@ -533,7 +566,7 @@ function App() {
       }
 
       setAnalysisStage('ai');
-      await executeAiAnalysis(analysisImage, analysisPreflight);
+      await executeAiAnalysis(analysisImage, analysisPreflight, capturedAt);
     } catch (err) {
       setError(humanizeGroqError(err));
     } finally {
@@ -593,6 +626,18 @@ function App() {
           <UploadPanel onUpload={handleImageUpload} onStartLiveTab={() => void handleStartLiveTab()} liveTabSupported={liveTabSupported} liveTabBusy={liveTabBusy} />
         ) : (
           <div className="space-y-2">
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-wider text-yellow-300">🔒 AUDIT LOCK · NEUTRAL-ONLY</div>
+                  <div className="mt-0.5 text-[9px] text-slate-500">
+                    No clean payout-aware Quotex holdout has yet proven a Wilson 95% lower bound above breakeven. CALL/PUT proposals are logged for research but final output remains NEUTRAL.
+                  </div>
+                </div>
+                <span className="shrink-0 rounded border border-yellow-500/20 bg-yellow-500/10 px-2 py-1 text-[8px] font-black text-yellow-300">UNPROVEN EDGE</span>
+              </div>
+            </div>
+
             {signal && (
               <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />
             )}
@@ -763,7 +808,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.1 • Train/holdout precision optimizer • Validated profiles only • Educational analysis</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.2 • Quant audit lock • Immutable signal logging • NEUTRAL until proven</div></footer>
     </div>
   );
 }

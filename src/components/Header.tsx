@@ -15,7 +15,7 @@ export function Header({ hasImage, onNew, liveTabActive = false }: HeaderProps) 
           </div>
           <div>
             <h1 className="text-sm font-black tracking-tight">QUOTEX <span className="text-green-400">1M</span> BOT</h1>
-            <p className="hidden md:block text-[8px] text-slate-600 uppercase tracking-widest">Live analysis + holdout-validated precision</p>
+            <p className="hidden md:block text-[8px] text-slate-600 uppercase tracking-widest">Quant-audited live analysis · neutral until proven</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -30,7 +30,7 @@ export function Header({ hasImage, onNew, liveTabActive = false }: HeaderProps) 
           )}
           <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-slate-800/50 rounded-md border border-slate-700">
             <div className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-            <span className="text-[10px] text-slate-400 font-mono">PHASE 4A.1</span>
+            <span className="text-[10px] text-slate-400 font-mono">PHASE 4A.2</span>
           </div>
         </div>
       </div>

@@ -34,6 +34,7 @@ export interface PrecisionProfile {
   train: PrecisionStats;
   holdout: PrecisionStats;
   validated: boolean;
+  payoutValidated: boolean;
   validationReason: string;
 }
 
@@ -180,15 +181,17 @@ export function optimizePrecisionProfile(
   const holdoutFiltered = holdoutRows.filter((row) => rowPassesRule(row, best.rule));
   const holdoutStats = evaluateRows(holdoutFiltered);
   const holdoutDecided = holdoutStats.wins + holdoutStats.losses;
-  const validated = holdoutStats.winRate !== null
+  const winRateTargetPassed = holdoutStats.winRate !== null
     && holdoutStats.winRate >= targetWinRate
     && holdoutDecided >= PRECISION_MIN_HOLDOUT_SIGNALS;
+  const payoutValidated = false;
+  const validated = false;
 
-  const validationReason = validated
-    ? `Untouched holdout reached ${holdoutStats.winRate}% across ${holdoutDecided} decided signals.`
+  const validationReason = winRateTargetPassed
+    ? `Historical win-rate target passed (${holdoutStats.winRate}% across ${holdoutDecided} decided signals), but payout-aware expectancy and a sealed Quotex holdout are missing. Live application is blocked.`
     : holdoutDecided < PRECISION_MIN_HOLDOUT_SIGNALS
-      ? `Holdout has only ${holdoutDecided} decided signals; need at least ${PRECISION_MIN_HOLDOUT_SIGNALS} before enabling this profile live.`
-      : `Untouched holdout reached ${holdoutStats.winRate ?? 0}%, below the ${targetWinRate}% target.`;
+      ? `Holdout has only ${holdoutDecided} decided signals; need at least ${PRECISION_MIN_HOLDOUT_SIGNALS}, plus real payout-aware validation.`
+      : `Historical holdout reached ${holdoutStats.winRate ?? 0}%; live application also requires payout-aware expectancy and a sealed Quotex holdout.`;
 
   return {
     profile: {
@@ -202,6 +205,7 @@ export function optimizePrecisionProfile(
       train: best.stats,
       holdout: holdoutStats,
       validated,
+      payoutValidated,
       validationReason,
     },
     trainRows: trainRows.length,
@@ -240,6 +244,7 @@ export function loadPrecisionProfile(): PrecisionProfile | null {
     if (
       parsed?.version !== 1
       || !parsed.validated
+      || parsed.payoutValidated !== true
       || typeof parsed.createdAt !== 'string'
       || !parsed.rule
       || typeof parsed.rule.minConfidence !== 'number'
