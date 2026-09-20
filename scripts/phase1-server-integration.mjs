@@ -6,13 +6,13 @@ import { spawn } from 'node:child_process';
 const port = 43127;
 const token = 'phase1-ci-audit-token';
 const dir = await mkdtemp(path.join(tmpdir(), 'quotex-phase1-server-'));
-const child = spawn(process.execPath, ['server.mjs'], {
+const child = spawn(process.execPath, ['--import', './tests/phase1-groq-fetch-spy.mjs', 'server.mjs'], {
   env: {
     ...process.env,
     PORT: String(port),
     AUDIT_DATA_DIR: dir,
     AUDIT_AUTH_TOKEN: token,
-    GROQ_API_KEY: '',
+    GROQ_API_KEY: 'phase1-fake-server-key',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -48,6 +48,25 @@ try {
   const health = await waitForHealth();
   const unauth = await json('/api/auth/check');
   const auth = await json('/api/auth/check', { headers:{ 'X-Audit-Token':token } });
+
+
+  const arbitraryAnalyze = await json('/api/groq/analyze', {
+    method:'POST',
+    headers,
+    body:JSON.stringify({
+      model:'attacker-selected-model',
+      messages:[{
+        role:'user',
+        content:[
+          { type:'text', text:'arbitrary caller payload' },
+          { type:'image_url', image_url:{ url:'data:image/png;base64,AA==' } },
+        ],
+      }],
+      temperature:1,
+    }),
+  });
+  await new Promise((resolve)=>setTimeout(resolve,50));
+  const groqSpyLine = stdout.join('').split('\n').find((line)=>line.startsWith('PHASE1_GROQ_SPY_CALLED ')) || null;
 
   const invalidOutcome = await json('/api/outcomes/events', {
     method:'POST',
@@ -96,10 +115,13 @@ try {
   }
 
   result = {
-    probeVersion:'phase1-server-integration-v1',
+    probeVersion:'phase1-server-integration-v2',
     health,
     unauthenticatedAuthStatus:unauth.status,
     authenticatedAuthStatus:auth.status,
+    arbitraryAnalyzeStatus:arbitraryAnalyze.status,
+    arbitraryAnalyzeReachedOutboundGroqSpy:arbitraryAnalyze.status === 200 && Boolean(groqSpyLine),
+    arbitraryAnalyzeSpyEvidence:groqSpyLine,
     invalidOutcomePayloadAccepted:invalidOutcome.status === 201,
     invalidOutcomeStatus:invalidOutcome.status,
     fakeReplayRecordStored:fakeRecord.status === 201,
