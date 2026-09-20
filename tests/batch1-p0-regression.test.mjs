@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import fsSync from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -319,4 +320,28 @@ test('Batch 1 fixed model payload cannot be influenced by caller fields', () => 
 test('Batch 1 hash format is cryptographic SHA-256', () => {
   const digest = crypto.createHash('sha256').update('known').digest('hex');
   assert.equal(digest.length, 64);
+});
+
+
+test('Batch 1 source guards keep upstream timeout, native-frame proof gate, size checks, and security layer wired', () => {
+  const server = fsSync.readFileSync('server.mjs', 'utf8');
+  const policy = fsSync.readFileSync('server/batch1Security.mjs', 'utf8');
+  const gate = fsSync.readFileSync('server/deterministicGate.mjs', 'utf8');
+
+  assert.match(server, /const controller = new AbortController\(\)/);
+  assert.match(server, /signal: controller\.signal/);
+  assert.match(server, /GROQ_UPSTREAM_TIMEOUT_MS/);
+  assert.match(server, /validateAnalyzeRequest\(await readJson\(req, ANALYZE_MAX_BODY_BYTES\)\)/);
+  assert.match(server, /decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES/);
+  assert.match(server, /verifyNativeFrame\(/);
+  assert.match(server, /if \(!verification\.eligibleForModel\)/);
+  assert.match(server, /fixedGroqPayload\(modelImage\)/);
+  assert.match(policy, /CLIENT_MODEL_PARAMETERS_FORBIDDEN/);
+  assert.match(policy, /withSerializedFileWrite/);
+  assert.match(policy, /DUPLICATE_/);
+  assert.match(policy, /RECORD_HASH_MISMATCH/);
+  assert.match(gate, /VALIDATION_COVERAGE_COMPLETE = false/);
+  assert.match(gate, /TIMEFRAME_TEMPLATE_THRESHOLD = 0\.985/);
+  assert.match(gate, /CHARTTYPE_THRESHOLD = 0\.92/);
+  assert.match(gate, /PRICE_AXIS_R2_MIN = 0\.995/);
 });
