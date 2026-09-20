@@ -416,3 +416,66 @@ test('client validator is not equivalent to its declared strict schema', () => {
   const clamped = signalLogic.validateModelSignal(JSON.stringify(modelPayload({ confidence:1000 })));
   assert.equal(clamped.confidence, 100);
 });
+
+
+test('outcome resolver currently ignores frameReasons and cross-asset mismatch when prices are readable', () => {
+  const snap = (asset, price, frameReasons) => ({
+    capturedAt: new Date(0).toISOString(),
+    platformClockUtc: '00:00:00 UTC',
+    asset,
+    price: {
+      price,
+      rawText:String(price),
+      ocrConfidence:95,
+      axisPredictedPrice:price,
+      axisResidual:0,
+      allowedResidual:0.001,
+      crossCheckPassed:true,
+      confidence:95,
+      reasonCode:null,
+    },
+    expiry: {
+      rawText:'00:01:00',
+      expirySeconds:60,
+      verifiedOneMinute:true,
+      confidence:95,
+      reasonCode:null,
+    },
+    payoutDecimal:0.9,
+    payoutPercent:90,
+    payoutConfidence:95,
+    breakevenWinRate:1/1.9,
+    payoutReason:null,
+    frameReasons,
+    priceAxisR2:1,
+    sourceFrameSha256:'x',
+  });
+
+  const result = outcomeResolver.resolveOutcome({
+    direction:'CALL',
+    entry:snap('EUR/USD', 1.1, ['CLOCK_STALE']),
+    expiry:snap('GBP/USD', 1.2, ['ASSET_MISMATCH']),
+  });
+  assert.equal(result.outcome, 'WIN');
+  assert.equal(result.nullReason, null);
+});
+
+test('resolver dueAt is derived from resolver capture timestamp plus 60 seconds', () => {
+  const entry = {
+    capturedAt:'2026-09-20T00:00:00.000Z',
+    platformClockUtc:null,
+    asset:'EUR/USD',
+    price:{ price:null, rawText:null, ocrConfidence:null, axisPredictedPrice:null, axisResidual:null, allowedResidual:null, crossCheckPassed:false, confidence:null, reasonCode:'CURRENT_PRICE_TAG_UNREADABLE' },
+    expiry:{ rawText:'00:01:00', expirySeconds:60, verifiedOneMinute:true, confidence:95, reasonCode:null },
+    payoutDecimal:null,
+    payoutPercent:null,
+    payoutConfidence:null,
+    breakevenWinRate:null,
+    payoutReason:'PAYOUT_UNREADABLE',
+    frameReasons:[],
+    priceAxisR2:null,
+    sourceFrameSha256:null,
+  };
+  const event = outcomeResolver.makeArmedEvent('CALL', entry);
+  assert.equal(event.payload.dueAt, '2026-09-20T00:01:00.000Z');
+});
