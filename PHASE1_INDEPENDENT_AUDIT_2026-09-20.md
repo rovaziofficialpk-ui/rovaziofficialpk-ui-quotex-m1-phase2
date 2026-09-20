@@ -40,7 +40,7 @@ Critical blockers:
 | R4 reproducible replay | **REFUTED** | Replay endpoint uses constant NEUTRAL instead of rerunning deterministic checks/model/gates. |
 | R5 unknowns stay null + reason | **PARTIAL / REFUTED as whole** | Outcome resolver and most structured readers fail closed, but preflight blocks can disappear without a decision record and payout is not included in deterministic failure reasons. |
 | R6 no secrets in bundle/logs/repo/stored files | **PARTIAL / UNVERIFIED as whole** | Key-shaped bundle scan passed; Groq key is server env; no key value was exposed in inspected logs/repo. Full stored audit-file secret scan was not possible, so whole claim remains unproven. |
-| R7 all stats/formulas correct | **PARTIAL** | Known breakeven value and tie return tested. Wilson/expectancy/full statistical behavior has not yet received a complete independent vector suite. |
+| R7 all stats/formulas correct | **CONFIRMED for the explicitly requested core formulas; broader UI statistics remain PARTIAL** | Independent production-module vectors verify breakeven, Wilson 95% lower bound, decided-only win-rate denominator, tie handling, known-return mean, full-sample expectancy null policy, agreement rate, null rate and coverage. No claim is made for statistics outside the audited set. |
 | R8 every UI error says what/why | **REFUTED** | Timeframe diagnostics are detailed, but Auto Test clears deterministic error text and preflight/track-ended/frozen paths do not all emit durable specific reason codes. |
 | R9 docs/UI match code | **REFUTED** | README still claims browser-local BYOK/localStorage Groq key and older phase state, while current code uses server-side Groq proxy and sessionStorage audit auth. |
 
@@ -119,20 +119,22 @@ Coverage:
 - This is still not whole-app coverage; DOM-heavy App/Backtest/server integration remains under-covered.
 
 Mutation sampling:
-11/11 defined sabotages were detected:
-- audit edge gate directional bypass
-- layout-not-found bypass
-- timeframe AND changed to OR
-- chart-type threshold bypass
-- price-axis R2 bypass
-- pixel-spacing bypass
-- price-step bypass
-- clock staleness bypass
-- payout ambiguity bypass
-- model bias-enum bypass
-- outcome entry-null bypass
+26/26 defined sabotages were detected; 0 were undetected and 0 failed to apply. The mutations cover:
+- final audit edge gate
+- layout, letterbox, candle-count, newest-candle and current-price-marker gates
+- price-axis/time-axis readability
+- timeframe missing/mismatch and badge-AND-axis logic
+- asset missing/mismatch
+- both validation-coverage locks
+- chart-type threshold
+- price-axis R², pixel-spacing and price-step checks
+- clock staleness
+- payout ambiguity and breakeven formula
+- model bias enum
+- outcome entry-null handling
+- Wilson z-value and tie-denominator behavior
 
-No sampled mutant was UNDETECTED. This is not exhaustive mutation proof. Not yet mutated: asset-match gate, OCR-confidence gate, candle min/max individually, current-price marker, newest-candle bounds, coverage lock, frozen-clock branch, expiry-duration branch, template scale list/canonical dimensions, several preflight paths.
+This is strong sampled mutation evidence, not exhaustive mutation proof. Still not mutation-tested end-to-end: frozen-clock timing branch, expiry-duration branch, template scale list/canonical dimensions, browser preflight implementation, DOM capture abnormal states, server proof enforcement, and every documentation/UI path.
 
 ## C. Capture
 
@@ -196,26 +198,28 @@ Payout gap: `PAYOUT_UNREADABLE` is produced, but `verifyStage3CFrame` does not p
 2. parses JSON;
 3. calls `proxyGroq(payload)`.
 
-It does not independently require or verify:
-- source frame hash
-- layout result
-- timeframe evidence
-- chart type
-- asset match
-- axes
-- clock
-- payout
-- validation coverage lock
-- approved model ID
-- approved prompt/schema version
+A local integration probe started the real server with an outbound Groq fetch spy, authenticated normally, and sent an arbitrary payload with:
+- model = `attacker-selected-model`
+- one caller-supplied image
+- temperature = 1
+- no response_format
+- no deterministic proof envelope
 
-Thus an authenticated direct caller can invoke Groq without deterministic checks. This is the strongest R2 failure.
+Observed result:
+- `/api/groq/analyze` returned HTTP 200;
+- the outbound spy was called;
+- spy evidence reported `model=attacker-selected-model`, `hasImage=true`, `temperature=1`, `hasResponseFormat=false`.
+
+Therefore this is a **CONFIRMED server-side bypass**, not only a code-inspection concern. The server does not independently require or verify source frame hash, layout result, timeframe evidence, chart type, asset match, axes, clock, payout, validation coverage lock, approved model ID, or approved prompt/schema version.
 
 ### HIGH — Backtest emits directional CALL/PUT
 Backtest builds rows from raw model `result.signal`, then renders `row.bias`; it does not apply the final audit edge gate. It does not place trades, but it violates the whole-app user-visible R1 requirement.
 
 ### HIGH — fake replay
 Server replay hard-codes NEUTRAL; it is a stored-output comparison, not a replay.
+
+### HIGH — append-only audit hash-chain is not concurrency-safe
+A local integration probe sent 120 concurrent valid outcome-event writes to the real server implementation. All 120 returned 201, but **119 adjacent hash-chain links were broken**. The implementation reads the current last hash and appends in separate asynchronous steps without serialization, allowing concurrent records to share the same predecessor. This directly undermines the claimed linear append-only chain under concurrent requests.
 
 ### HIGH — preflight frames can vanish from decision audit
 Manual/Auto Test preflight blocks can stop before the normal reproducibility record is written. Auto Test also makes a blocked frame the similarity baseline.
@@ -226,14 +230,19 @@ After `executeAiAnalysis`, Auto Test calls `setError('')`, including when `execu
 ### MEDIUM — uploaded-image analysis re-entry race
 Manual Analyze is not disabled by `analyzing` and has no busy ref; repeated clicks can overlap requests/state/audit operations.
 
-### MEDIUM — client model validator is coercive
-Audit probe confirmed:
-- confidence `"80"` (string) is accepted via Number conversion
-- confidence `1000` is clamped/accepted instead of rejected
-This is weaker than the declared strict JSON schema.
+### MEDIUM — client model validator is coercive and repairs unknown text
+Audit probes confirmed:
+- confidence `"80"` (string) is accepted via Number conversion;
+- confidence `1000` is clamped/accepted instead of rejected;
+- empty pair becomes `Unknown Asset`;
+- empty pattern becomes `No clear pattern`;
+- empty entry becomes a generated no-trade sentence;
+- empty support/resistance becomes a generated fallback sentence.
+
+That conflicts with the requested rule that unknown values remain null with a reason code and is weaker than the declared strict JSON schema.
 
 ### MEDIUM — arbitrary outcome event body is accepted
-Outcome event endpoint validates only identifiers/event type, then stores the rest of the supplied body. It does not server-validate direction, prices, timestamps, payout, resolved outcome or relationship to an existing trade.
+This is runtime-confirmed. A local server integration probe submitted an `ARMED` event containing `direction:'SIDEWAYS'`, `dueAt:null`, `entry:null`; the endpoint returned **201**. It validates only identifiers/event type, then stores the rest of the supplied body. It does not server-validate direction, prices, timestamps, payout, resolved outcome or relationship to an existing trade.
 
 ### MEDIUM — precision profile localStorage trust
 A locally injected object carrying the expected validation flags can affect pre-audit research filtering. Final audit lock still forces NEUTRAL, so this is integrity/reproducibility risk rather than a trade-signal escape.
@@ -270,9 +279,15 @@ AI weaknesses:
 - normal live request is one image; generic Groq helper supports primary + up to two context images (3 total)
 
 Malformed output:
-- invalid JSON and invalid bias enum are rejected by the production validator in direct tests
-- confidence type/range is not strict as described above
-- final live audit gate is applied after the model result, but Backtest does not use that final gate
+- invalid JSON and invalid bias enum are rejected by the production validator in direct tests;
+- confidence type/range is not strict as described above;
+- empty textual fields are repaired into fallback strings rather than remaining unknown/null;
+- final live audit gate is applied after the model result, but Backtest does not use that final gate.
+
+Server-side route enforcement:
+- runtime outbound-spy test proves an authenticated arbitrary image payload can reach the Groq transport without deterministic proof;
+- caller-selected model/temperature are forwarded unchanged;
+- therefore client-side JSON schema/prompt settings are not a security boundary.
 
 ## H. Gates and audit lock
 
@@ -302,10 +317,16 @@ CONFIRMED:
 - missing entry/expiry/payout returns null with reason in resolver
 - WIN unit return is +payout, LOSS -1, TIE 0
 
-PARTIAL / still needs independent known-value vector tests:
-- Wilson lower bound implementation appears to be the standard formula, but the Phase 1 audit has not yet checked it against a table of known reference values.
-- expectancy/full-sample selection-bias reporting needs a fuller independent vector suite.
-- win-rate denominator excludes ties; ties are reported separately. Documentation should make that convention explicit wherever win rate is shown.
+CONFIRMED by independent known-value vectors for the requested core formulas:
+- Wilson 95% lower bound: a holdout vector of 24 wins, 4 losses and 2 ties yields decided-only win rate 85.7% and Wilson lower bound 68.5%.
+- Backtest denominator/ties: 1 win, 1 loss, 1 tie and 2 neutral rows yields 3 directional signals, 2 neutral, 50% decided-only win rate and 60% signal coverage.
+- Outcome expectancy: returns +0.9, -1 and 0 yield mean/full-sample expectancy -0.033333 when all expired outcomes are known.
+- If any expired outcome is null, full-sample expectancy remains null and a selection-bias warning is emitted.
+- Agreement/null vector: 4 expired, 3 known, 1 null, 4 manual labels, 3 agreement-eligible and 2 agreements yields 25% null rate and 66.67% agreement rate.
+- Breakeven: 93% payout yields 0.5181347150259068 before presentation rounding.
+- Tie return is 0.
+
+These tests validate the named formulas/statistics, not every possible UI aggregation or future statistic.
 
 ## R6 secret audit
 
@@ -332,16 +353,18 @@ Current code uses server-side Groq key, protected proxy endpoints, and sessionSt
 Audit branch: `audit/phase1-e2e-20260920`
 PR: #1, deliberately not merged.
 
-Latest complete audit workflow evidence before this report:
+Latest complete audit workflow evidence:
+- workflow conclusion: SUCCESS on audit branch head `eee793563b8da4d4d4dbfba1ff06f23e3661613c`
 - baseline 57/57 pass
-- direct production runtime 10/10 pass
+- direct production-runtime audit tests 16/16 pass
 - strict TypeScript pass
 - production build pass
-- mutation sample 11/11 detected, 0 sampled mutants undetected
+- mutation sample 26/26 detected, 0 sampled mutants undetected
+- local server integration probe passed and confirmed the R2 outbound bypass, weak outcome schema, fake replay and concurrent hash-chain break
 - key-shaped client bundle scan pass
 - linter not configured
 - lockfile missing from repository
-- production-module coverage approx. 49.90% line / 64.71% branch / 40.74% functions for imported modules
+- production-module coverage 52.89% lines / 76.56% branches / 53.69% functions for imported modules
 
 ## Phase 2 priority proposal — no fixes applied yet
 
@@ -349,6 +372,7 @@ P0:
 1. server-side deterministic proof token/envelope required by `/api/groq/analyze`, bound to source hash + config/spec + all required pass results; reject arbitrary proxy payloads
 2. apply audit edge gate to Backtest user-visible signal, or clearly separate proposed/research direction without calling it final signal
 3. replace fake replay with actual stored-artifact deterministic replay
+4. serialize/atomically queue hash-chained audit writes and test concurrent chain integrity
 
 P1:
 4. write a durable NEUTRAL decision record for every preflight/deterministic block
