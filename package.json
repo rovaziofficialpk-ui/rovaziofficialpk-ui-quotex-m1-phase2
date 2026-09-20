@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.3.4-signal-top",
+  "version": "0.3.5-compact-dashboard",
   "private": true,
   "type": "module",
   "scripts": {

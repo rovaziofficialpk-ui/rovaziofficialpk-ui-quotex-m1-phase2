@@ -7,60 +7,35 @@ interface ImagePreflightPanelProps {
 
 export function ImagePreflightPanel({ result, loading }: ImagePreflightPanelProps) {
   if (loading) {
-    return (
-      <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-        <div className="text-xs text-slate-400 font-semibold">🔎 Inspecting screenshot quality…</div>
-      </div>
-    );
+    return <div className="rounded-lg border border-slate-800 bg-slate-900/55 px-2.5 py-2 text-[10px] font-bold text-slate-400">🔎 Checking frame quality…</div>;
   }
-
   if (!result) return null;
 
-  const statusClass = result.status === 'pass'
-    ? 'text-green-400 border-green-500/30 bg-green-500/5'
+  const tone = result.status === 'pass'
+    ? 'text-green-400 border-green-500/30'
     : result.status === 'warn'
-      ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/5'
-      : 'text-red-400 border-red-500/30 bg-red-500/5';
-
-  const statusLabel = result.status === 'pass' ? 'PASS' : result.status === 'warn' ? 'REVIEW' : 'BLOCK';
+      ? 'text-yellow-400 border-yellow-500/30'
+      : 'text-red-400 border-red-500/30';
 
   return (
-    <div className={`rounded-lg p-3 border ${statusClass}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-wider opacity-80">Local Screenshot Preflight</div>
-          <div className="font-black text-sm mt-0.5">{statusLabel} • {result.score}/100</div>
+    <details className={`group rounded-lg border bg-slate-900/55 ${tone}`}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-[10px] font-black uppercase">{result.status === 'pass' ? '✓ Quality pass' : result.status === 'warn' ? '⚠ Quality review' : '✕ Quality block'}</span>
+          <span className="text-[9px] text-slate-500">{result.score}/100 · {result.width}×{result.height}</span>
         </div>
-        <div className="text-right text-[10px] opacity-80 font-mono">
-          <div>{result.width}×{result.height}</div>
-          <div>detail {Math.round(result.edgeDensity * 1000) / 10}%</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
+        <span className="text-[9px] text-slate-600 group-open:rotate-90">›</span>
+      </summary>
+      <div className="grid grid-cols-3 gap-1 border-t border-slate-800 px-2.5 py-2 text-[9px]">
         <Metric label="Contrast" value={result.contrast.toFixed(1)} />
-        <Metric label="Brightness" value={result.brightness.toFixed(1)} />
+        <Metric label="Bright" value={result.brightness.toFixed(1)} />
         <Metric label="Aspect" value={result.aspectRatio.toFixed(2)} />
+        {result.warnings.length > 0 && <div className="col-span-3 mt-1 text-[9px] leading-relaxed text-slate-400">{result.warnings.join(' • ')}</div>}
       </div>
-
-      {result.warnings.length > 0 && (
-        <ul className="mt-3 space-y-1 text-[10px] text-slate-300">
-          {result.warnings.map((warning, index) => <li key={`${warning}-${index}`}>• {warning}</li>)}
-        </ul>
-      )}
-
-      {result.status === 'block' && (
-        <p className="mt-2 text-[10px] text-red-300">Analysis is disabled until a clearer screenshot is uploaded.</p>
-      )}
-    </div>
+    </details>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded bg-black/20 border border-white/5 px-2 py-1.5">
-      <div className="text-slate-500">{label}</div>
-      <div className="font-mono text-slate-200">{value}</div>
-    </div>
-  );
+  return <div className="rounded bg-black/20 px-1.5 py-1"><span className="text-slate-600">{label} </span><span className="font-mono text-slate-300">{value}</span></div>;
 }

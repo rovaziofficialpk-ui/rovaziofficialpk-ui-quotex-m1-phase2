@@ -11,9 +11,9 @@ interface ApiKeyPanelProps {
 export function ApiKeyPanel({ apiKey, onChange, onClear, onTest, testState }: ApiKeyPanelProps) {
   if (!apiKey) {
     return (
-      <div className="mb-6 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-xl p-5">
-        <h2 className="text-lg font-bold mb-2">🔑 Connect Groq</h2>
-        <p className="text-sm text-slate-300 mb-3">
+      <div className="mb-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-lg p-3">
+        <h2 className="text-sm font-bold mb-1">🔑 Connect Groq</h2>
+        <p className="text-xs text-slate-400 mb-2">
           Create a Groq API key at <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">console.groq.com</a>, then paste it below.
         </p>
         <input
@@ -30,7 +30,7 @@ export function ApiKeyPanel({ apiKey, onChange, onClear, onTest, testState }: Ap
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/50 rounded-md px-3 py-2 mb-6 border border-slate-800">
+    <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/50 rounded-md px-3 py-2 mb-2 border border-slate-800">
       <div className="flex items-center gap-2 text-xs">
         <span className={testState === 'error' ? 'text-red-400' : 'text-green-400'}>●</span>
         <span className="text-slate-400 font-mono">Groq • gsk_...{apiKey.slice(-4)}</span>

@@ -5,7 +5,6 @@ import { ContextImagesPanel } from './components/ContextImagesPanel';
 import { Header } from './components/Header';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ImagePreflightPanel } from './components/ImagePreflightPanel';
-import { InfoCards } from './components/InfoCards';
 import { LiveStreamPreview } from './components/LiveStreamPreview';
 import { LiveTabPanel } from './components/LiveTabPanel';
 import { SignalCard } from './components/SignalCard';
@@ -583,88 +582,122 @@ function App() {
         {!image ? (
           <UploadPanel onUpload={handleImageUpload} onStartLiveTab={() => void handleStartLiveTab()} liveTabSupported={liveTabSupported} liveTabBusy={liveTabBusy} />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 space-y-4">
-              {signal && (
-                <div className="scroll-mt-24">
-                  <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />
-                </div>
-              )}
+          <div className="space-y-2">
+            {signal && (
+              <SignalCard signal={signal} onRetry={() => void analyzeChart()} analyzing={analyzing} minConfidence={minConfidence} />
+            )}
 
-              <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3">
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div>
-                    <div className="text-xs text-slate-500 uppercase tracking-wider font-mono">Primary M1 Chart</div>
-                    <div className={`mt-0.5 text-[9px] font-bold tracking-wider ${liveTabActive ? 'text-green-400' : 'text-slate-600'}`}>{sourceLabel}</div>
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-3 items-start">
+              <section className="min-w-0 rounded-xl border border-slate-800 bg-slate-900/40 p-2">
+                <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">M1 Live Chart</div>
+                    <div className={`truncate text-[9px] font-bold ${liveTabActive ? 'text-green-400' : 'text-slate-600'}`}>{sourceLabel}</div>
                   </div>
-                  {responseTime !== null && <div className="text-xs font-mono text-green-400">⚡ {(responseTime / 1000).toFixed(2)}s</div>}
+                  <div className="flex items-center gap-2 text-[10px]">
+                    {liveTabActive && <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 font-bold text-green-400">● LIVE</span>}
+                    {responseTime !== null && <span className="font-mono text-cyan-400">⚡ {(responseTime / 1000).toFixed(2)}s</span>}
+                  </div>
                 </div>
-                <div className="relative bg-black rounded-lg overflow-hidden">
+
+                <div className="relative overflow-hidden rounded-lg bg-black">
                   {liveTabActive && liveStreamRef.current ? (
                     <LiveStreamPreview
                       stream={liveStreamRef.current}
-                      className="w-full h-auto max-h-[500px] object-contain"
+                      className="h-[56vh] min-h-[340px] max-h-[620px] w-full object-contain"
                     />
                   ) : (
-                    <img src={image} alt="Primary chart frame" className="w-full h-auto max-h-[500px] object-contain" />
+                    <img src={image} alt="Primary chart frame" className="h-[56vh] min-h-[340px] max-h-[620px] w-full object-contain" />
                   )}
+
                   {analyzing && (
-                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-                      <div className="text-center px-4">
-                        <div className="relative w-20 h-20 mx-auto mb-3"><div className="absolute inset-0 border-4 border-green-400/30 rounded-full" /><div className="absolute inset-0 border-4 border-green-400 border-t-transparent rounded-full animate-spin" /><div className="absolute inset-0 flex items-center justify-center text-2xl">{analysisStage === 'capturing' ? '📸' : '🎯'}</div></div>
-                        <p className="font-bold text-lg">{stageText[0]}</p>
-                        <p className="text-xs text-slate-400 mt-1 font-mono">{stageText[1]}</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/75 backdrop-blur-[2px]">
+                      <div className="rounded-xl border border-slate-700 bg-slate-950/90 px-6 py-4 text-center shadow-2xl">
+                        <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
+                        <p className="text-sm font-black">{stageText[0]}</p>
+                        <p className="mt-1 text-[10px] text-slate-500">{stageText[1]}</p>
                       </div>
                     </div>
                   )}
                 </div>
+              </section>
 
-                <div className="mt-3 space-y-3">
-                  <LiveTabPanel
-                    info={liveTabInfo}
-                    active={liveTabActive}
+              <aside className="space-y-2 xl:sticky xl:top-[58px]">
+                <LiveTabPanel
+                  info={liveTabInfo}
+                  active={liveTabActive}
+                  busy={liveTabBusy || analyzing}
+                  onChangeTab={() => void handleStartLiveTab()}
+                  onStop={handleStopLiveTab}
+                />
+
+                {liveTabActive && (
+                  <AutoTestPanel
+                    enabled={autoTestEnabled}
+                    canStart={Boolean(apiKey.trim() && liveTabActive)}
                     busy={liveTabBusy || analyzing}
-                    onChangeTab={() => void handleStartLiveTab()}
-                    onStop={handleStopLiveTab}
+                    intervalSeconds={autoIntervalSeconds}
+                    stats={autoStats}
+                    onToggle={handleToggleAutoTest}
+                    onIntervalChange={setAutoIntervalSeconds}
                   />
+                )}
 
-                  {liveTabActive && (
-                    <AutoTestPanel
-                      enabled={autoTestEnabled}
-                      canStart={Boolean(apiKey.trim() && liveTabActive)}
-                      busy={liveTabBusy || analyzing}
-                      intervalSeconds={autoIntervalSeconds}
-                      stats={autoStats}
-                      onToggle={handleToggleAutoTest}
-                      onIntervalChange={setAutoIntervalSeconds}
-                    />
-                  )}
+                <ImagePreflightPanel result={preflight} loading={preflightLoading} />
 
-                  <ImagePreflightPanel result={preflight} loading={preflightLoading} />
-
-                  {!analyzing && !signal && (
-                    <>
-                      <ContextImagesPanel images={contextImages} onUpload={handleContextUpload} onRemove={(label) => setContextImages((current) => ({ ...current, [label]: null }))} />
-
-                      <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                        <div className="flex items-center justify-between mb-2"><label className="text-xs text-slate-400 font-semibold">🎚️ Min AI Setup Confidence</label><span className="text-sm font-bold text-green-400">{minConfidence}%</span></div>
-                        <input type="range" min="50" max="90" value={minConfidence} onChange={(event: ChangeEvent<HTMLInputElement>) => setMinConfidence(Number(event.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-green-500" />
-                        <p className="text-[10px] text-slate-500 mt-1">A direction also needs ≥3/4 independent confirmations. Confidence alone cannot pass the Phase 3 gate.</p>
-                      </div>
-
-                      <button onClick={() => void analyzeChart()} disabled={!canAnalyze} className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 disabled:from-slate-700 disabled:to-slate-800 text-white font-black rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed text-lg shadow-lg shadow-green-500/20">
-                        {liveTabActive ? '📸 CAPTURE LIVE FRAME + ANALYZE' : '🧠 RUN PHASE 3 ANALYSIS'}
-                      </button>
-                      {liveTabActive && <p className="text-center text-[10px] text-green-500/80">Live preview updates continuously. Analyze captures a separate fresh frame for the AI pipeline.</p>}
-                    </>
-                  )}
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-2.5">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Min confidence</label>
+                    <span className="text-xs font-black text-green-400">{minConfidence}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="90"
+                    value={minConfidence}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setMinConfidence(Number(event.target.value))}
+                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-700 accent-green-500"
+                  />
                 </div>
-              </div>
-            </div>
 
-            <div className="space-y-4">
-              <HistoryPanel history={history} onDelete={deleteHistoryItem} onClear={clearHistory} onExportJson={() => exportHistoryJson(history)} onExportCsv={() => exportHistoryCsv(history)} />
-              <InfoCards />
+                <button
+                  onClick={() => void analyzeChart()}
+                  disabled={!canAnalyze}
+                  className="w-full rounded-lg bg-green-500 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-green-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                >
+                  {liveTabActive ? '📸 ANALYZE NOW' : '🧠 ANALYZE CHART'}
+                </button>
+
+                <details className="group rounded-lg border border-slate-800 bg-slate-900/45">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <span>Context · M5 / H1</span>
+                    <span className="text-slate-600 group-open:rotate-90">›</span>
+                  </summary>
+                  <div className="border-t border-slate-800 p-2">
+                    <ContextImagesPanel
+                      images={contextImages}
+                      onUpload={handleContextUpload}
+                      onRemove={(label) => setContextImages((current) => ({ ...current, [label]: null }))}
+                    />
+                  </div>
+                </details>
+
+                <details className="group rounded-lg border border-slate-800 bg-slate-900/45">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <span>History · {history.length}</span>
+                    <span className="text-slate-600 group-open:rotate-90">›</span>
+                  </summary>
+                  <div className="max-h-[45vh] overflow-y-auto border-t border-slate-800 p-2">
+                    <HistoryPanel
+                      history={history}
+                      onDelete={deleteHistoryItem}
+                      onClear={clearHistory}
+                      onExportJson={() => exportHistoryJson(history)}
+                      onExportCsv={() => exportHistoryCsv(history)}
+                    />
+                  </div>
+                </details>
+              </aside>
             </div>
           </div>
         )}
@@ -674,7 +707,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.4 • Signal result above chart • Real-time live preview • Smart Auto Test • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 3.5 • Compact dashboard • Live chart • Smart Auto Test • Educational analysis only</div></footer>
     </div>
   );
 }
