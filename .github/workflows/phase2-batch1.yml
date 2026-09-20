@@ -1,0 +1,121 @@
+name: Phase 2 Batch 1 P0
+
+on:
+  push:
+    branches:
+      - phase2/batch1-p0-proof-audit-integrity
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  batch1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          git rev-parse HEAD
+          git status --short
+
+      - name: Fresh dependency install
+        run: npm install
+
+      - name: Baseline and Batch 1 tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test | tee batch1-full-tests.txt
+
+      - name: Phase 1 production-runtime regression suite
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --loader ./tests/phase1-ts-loader.mjs --test tests/phase1-production-runtime.audit.mjs | tee batch1-phase1-runtime.txt
+
+      - name: Strict TypeScript
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck | tee batch1-typecheck.txt
+
+      - name: Production build
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build | tee batch1-build.txt
+
+      - name: Phase 1 probes after Batch 1
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-audit-probes.mjs | tee phase1-probes.json
+
+      - name: Batch 1 server integration probe
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/batch1-server-integration.mjs | tee batch1-server-integration.json
+
+      - name: Reconcile source and runtime findings
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/batch1-reconcile.mjs phase1-probes.json batch1-server-integration.json | tee batch1-reconciliation.json
+
+      - name: Rerun all Phase 1 mutation checks
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/phase1-mutation-check.mjs | tee batch1-phase1-mutations.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('batch1-phase1-mutations.json','utf8'));
+          const bad = data.results.filter((x) => x.status !== 'DETECTED');
+          console.log('PHASE1_MUTATIONS', JSON.stringify({ total:data.results.length, bad }, null, 2));
+          if (bad.length) process.exit(1);
+          NODE
+
+      - name: Batch 1 mutation checks
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/batch1-mutation-check.mjs | tee batch1-new-mutations.json
+
+      - name: Assert locks remain ON
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const fields = fs.readFileSync('src/services/screenFieldVerification.ts','utf8');
+          const stage = fs.readFileSync('src/services/screenStage3C.ts','utf8');
+          const server = fs.readFileSync('server/deterministicGate.mjs','utf8');
+          if (!fields.includes('LAYOUT_VALIDATION_COVERAGE_COMPLETE = false')) process.exit(2);
+          if (!stage.includes('STAGE3C_VALIDATION_COVERAGE_COMPLETE = false')) process.exit(3);
+          if (!server.includes('VALIDATION_COVERAGE_COMPLETE = false')) process.exit(4);
+          console.log('AUDIT_LOCK=ON');
+          console.log('LAYOUT_VALIDATION_INCOMPLETE=ON');
+          NODE
+
+      - name: Upload Batch 1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-batch1-evidence
+          path: |
+            batch1-*.txt
+            batch1-*.json
+            phase1-probes.json
+          if-no-files-found: error
