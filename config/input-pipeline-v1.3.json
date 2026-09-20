@@ -1,0 +1,57 @@
+{
+  "version": "input-pipeline-v1.3.0",
+  "auditLock": true,
+  "configuredTimeframe": "M1",
+  "configuredAsset": "USER_SESSION_SETTING_REQUIRED",
+  "layoutProfileVersion": "quotex-desktop-observed-v1.2.0",
+  "singleFrameOnly": true,
+  "stage3c": {
+    "chartType": {
+      "required": "candlestick",
+      "templateVersion": "quotex-candlestick-v1",
+      "minimumCorrelation": 0.92,
+      "knownMismatchTemplates": ["line", "bars", "heikin_ashi"],
+      "missingMismatchTemplateBehavior": "CHARTTYPE_UNVERIFIED"
+    },
+    "timeframe": {
+      "logic": "explicit_1m_badge AND time_axis_candle_pitch",
+      "acceptedMinutesPerCandle": 1.0,
+      "toleranceMinutes": 0.08,
+      "logDisagreement": true
+    },
+    "priceAxis": {
+      "minimumAcceptedLabels": 5,
+      "monotonicRequired": true,
+      "minimumLinearR2": 0.995,
+      "maximumPixelSpacingCv": 0.25,
+      "maximumPriceStepCv": 0.10,
+      "currentPriceTagOcclusion": "reject_overlapping_ocr_token_do_not_repair"
+    },
+    "clock": {
+      "label": "UTC",
+      "maximumLiveStalenessSeconds": 5,
+      "frozenIfSameClockAfterMs": 1500,
+      "secondsIntoCandle": "platform_utc_seconds_mod_60"
+    },
+    "payout": {
+      "source": "asset_label_area",
+      "unreadableBehavior": "null_with_REASON",
+      "breakevenFormula": "1/(1+payout_decimal)"
+    },
+    "ocr": {
+      "engine": "tesseract-5",
+      "minimumTokenConfidence": 70,
+      "logPerFieldConfidence": true
+    }
+  },
+  "validationCoverage": {
+    "splitUnit": "SESSION",
+    "requiredSessions": 3,
+    "requiredAssets": 2,
+    "requiredWindowOrZoomStates": 2,
+    "requiredRealNonM1": ["5s", "15s", "30s", "5m", "15m"],
+    "complete": false,
+    "effect": "AI_CALL_BLOCKED_WITH_LAYOUT_VALIDATION_INCOMPLETE"
+  },
+  "outcomeDataUsedForRules": false
+}

@@ -184,6 +184,8 @@ async function replayRecent(limit) {
 
 const OCR_MODES = {
   asset: { psm: '11', whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ/() -' },
+  asset_payout: { psm: '11', whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ/() -0123456789%' },
+  clock: { psm: '11', whitelist: '0123456789:UTC ' },
   time_axis: { psm: '11', whitelist: '0123456789:' },
   price_axis: { psm: '11', whitelist: '0123456789.' },
   trade_fields: { psm: '11', whitelist: '0123456789:%.$ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ' },
@@ -321,6 +323,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname.startsWith('/api/')) {
       if (!requireAuth(req, res)) return;
+
+      if (req.method === 'GET' && url.pathname === '/api/time') {
+        return sendJson(res, 200, { ok: true, serverUnixMs: Date.now(), serverUtc: new Date().toISOString() });
+      }
 
       if (req.method === 'POST' && url.pathname === '/api/audit/records') {
         const payload = await readJson(req);

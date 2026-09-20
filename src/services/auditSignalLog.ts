@@ -29,6 +29,16 @@ export interface AuditSignalRecord {
   expiryTimestamp: string | null;
   expirySeconds: number | null;
   payout: number | null;
+  payoutBreakevenWinRate: number | null;
+  payoutReadReason: string | null;
+  platformClockUtc: string | null;
+  secondsIntoCandle: number | null;
+  chartType: string | null;
+  priceAxisMin: number | null;
+  priceAxisMax: number | null;
+  priceAxisR2: number | null;
+  timeframeDisagreement: boolean | null;
+  fieldLegibility: unknown;
   outcome: AuditOutcome;
   captureToDecisionMs: number | null;
   feed: string;
@@ -95,6 +105,16 @@ export function createAuditSignalRecord(args: {
   expiryTimestamp?: string | null;
   expirySeconds?: number | null;
   payout?: number | null;
+  payoutBreakevenWinRate?: number | null;
+  payoutReadReason?: string | null;
+  platformClockUtc?: string | null;
+  secondsIntoCandle?: number | null;
+  chartType?: string | null;
+  priceAxisMin?: number | null;
+  priceAxisMax?: number | null;
+  priceAxisR2?: number | null;
+  timeframeDisagreement?: boolean | null;
+  fieldLegibility?: unknown;
   outcome?: AuditOutcome;
   feed?: string;
   rawDataRef?: string | null;
@@ -131,6 +151,16 @@ export function createAuditSignalRecord(args: {
     expiryTimestamp: args.expiryTimestamp ?? null,
     expirySeconds: args.expirySeconds ?? null,
     payout: args.payout ?? null,
+    payoutBreakevenWinRate: args.payoutBreakevenWinRate ?? null,
+    payoutReadReason: args.payoutReadReason ?? null,
+    platformClockUtc: args.platformClockUtc ?? null,
+    secondsIntoCandle: args.secondsIntoCandle ?? null,
+    chartType: args.chartType ?? null,
+    priceAxisMin: args.priceAxisMin ?? null,
+    priceAxisMax: args.priceAxisMax ?? null,
+    priceAxisR2: args.priceAxisR2 ?? null,
+    timeframeDisagreement: args.timeframeDisagreement ?? null,
+    fieldLegibility: args.fieldLegibility ?? null,
     outcome: args.outcome ?? (args.signal.bias === 'NEUTRAL' ? 'NEUTRAL' : 'UNKNOWN'),
     captureToDecisionMs: latency,
     feed: args.feed || 'Unknown feed',

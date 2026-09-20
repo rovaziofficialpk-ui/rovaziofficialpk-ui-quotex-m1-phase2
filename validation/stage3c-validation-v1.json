@@ -1,0 +1,34 @@
+{
+  "version": "stage3c-validation-v1",
+  "splitUnit": "SESSION",
+  "calibration": [
+    {
+      "sessionId": "calibration-session-001",
+      "source": "saved Quotex recording already present in conversation",
+      "asset": "CAD/CHF (OTC)",
+      "timeframe": "M1",
+      "chartType": "candlestick",
+      "frameCountUsed": 10,
+      "layouts": ["observed-desktop-736x334-family"],
+      "usedForThresholdCalibration": true
+    }
+  ],
+  "acceptance": [],
+  "requirements": {
+    "minimumSessionsTotal": 3,
+    "minimumAssets": 2,
+    "minimumWindowOrZoomStates": 2,
+    "realNonM1Timeframes": ["5s", "15s", "30s", "5m", "15m"],
+    "fivePostDeploymentLiveDecisions": true,
+    "fiveReplayMatches": true
+  },
+  "status": "INCOMPLETE",
+  "missing": [
+    "at least two additional independent sessions",
+    "at least one additional real asset for the 2+ asset acceptance requirement",
+    "three total real assets for the requested asset OCR test",
+    "at least one additional window size or browser zoom state",
+    "real 5s, 15s, 30s, 5m and 15m frames",
+    "five real post-deployment live decisions"
+  ]
+}

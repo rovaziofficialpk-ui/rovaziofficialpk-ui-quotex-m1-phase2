@@ -1,0 +1,56 @@
+{
+  "version": "quotex-desktop-observed-v1.2.0",
+  "calibration": {
+    "sessionCount": 1,
+    "sameSessionFrames": 10,
+    "tradeOutcomesUsed": false
+  },
+  "regionsAddedInStage3C": {
+    "chartTypeToolbar": { "x": 0.045, "y": 0.70, "w": 0.10, "h": 0.295 },
+    "platformClock": { "x": 0.055, "y": 0.125, "w": 0.18, "h": 0.075 }
+  },
+  "chartTypeEvidence": {
+    "expected": "candlestick",
+    "sameSessionFrames": 10,
+    "passes": 10,
+    "minimumObservedCorrelation": 0.9537575840950012,
+    "meanObservedCorrelation": 0.9538471400737762,
+    "frozenThreshold": 0.92
+  },
+  "priceAxisEvidence": {
+    "acceptedLabels": 10,
+    "max": 0.604,
+    "min": 0.5995,
+    "linearR2": 0.9999978971311656,
+    "pixelSpacingCv": 0.005454311059437232,
+    "priceStepCv": 1.1033485388602343e-13
+  },
+  "payoutEvidence": {
+    "realFrameRaw": "93%",
+    "ocrConfidence": 96.839531,
+    "payoutDecimal": 0.93,
+    "breakevenWinRate": 0.5181347150259068
+  },
+  "legibilityEvidence": {
+    "largerCapture": {
+      "assetValidTokens": 3,
+      "assetMeanConfidence": 95.41,
+      "timeAxisValidLabels": 14,
+      "timeAxisMeanConfidence": 94.74,
+      "priceAxisValidLabels": 10,
+      "priceAxisMeanConfidence": 96.6
+    },
+    "lowerResolutionCapture": {
+      "assetValidTokens": 0,
+      "timeAxisValidLabels": 0,
+      "priceAxisValidLabels": 0
+    },
+    "browserZoomExperiment": "NOT_RUN"
+  },
+  "limitations": [
+    "Calibration evidence is still one session.",
+    "No real non-M1 frames have been supplied.",
+    "No real line/bar/Heikin-Ashi frames have been supplied.",
+    "Acceptance set is empty, so LAYOUT_VALIDATION_INCOMPLETE remains active."
+  ]
+}

@@ -32,7 +32,7 @@ import {
 } from './services/groq';
 import { buildAuditArtifact, buildPrivacyMaskedSourceArtifact } from './services/auditArtifacts';
 import { clearAuditToken, getServerHealth, loadAuditToken, saveAuditToken, verifyAuditAuth, logSettingChange, type ServerHealth } from './services/apiClient';
-import { verifyStructuredScreenFields } from './services/screenFieldVerification';
+import { verifyStage3CFrame } from './services/screenStage3C';
 import {
   INPUT_PIPELINE_CONFIG_VERSION,
   LAYOUT_PROFILE_VERSION,
@@ -79,6 +79,7 @@ function App() {
   const autoConsecutiveErrorsRef = useRef(0);
   const autoLastBiasRef = useRef<string | null>(null);
   const autoStableStreakRef = useRef(0);
+  const lastPlatformClockRef = useRef<{ secondsOfDay: number; observedClientMs: number } | null>(null);
   const [auditToken, setAuditTokenState] = useState(() => loadAuditToken());
   const [authVerified, setAuthVerified] = useState(false);
   const [serverHealth, setServerHealth] = useState<ServerHealth | null>(null);
@@ -461,15 +462,22 @@ function App() {
 
     const capturedMs = auditMeta.capturedAt ? Date.parse(auditMeta.capturedAt) : Number.NaN;
 
-    let fieldVerification: Awaited<ReturnType<typeof verifyStructuredScreenFields>> | null = null;
+    let fieldVerification: Awaited<ReturnType<typeof verifyStage3CFrame>> | null = null;
     let deterministicScreenMs = structuralMs;
     if (deterministic.safeForAi) {
       const fieldStartedAt = performance.now();
-      fieldVerification = await verifyStructuredScreenFields({
+      fieldVerification = await verifyStage3CFrame({
         crops: deterministic.crops,
         metrics: deterministic.metrics,
         configuredAsset: configuredAsset.trim() || null,
+        previousClock: lastPlatformClockRef.current,
       });
+      if (fieldVerification.platformClock.utcSecondsOfDay !== null) {
+        lastPlatformClockRef.current = {
+          secondsOfDay: fieldVerification.platformClock.utcSecondsOfDay,
+          observedClientMs: Date.now(),
+        };
+      }
       deterministicScreenMs += Math.round(performance.now() - fieldStartedAt);
 
       const fieldReasons = [...fieldVerification.reasons];
@@ -506,6 +514,8 @@ function App() {
     if (!deterministic.safeForAi) {
       const decisionAt = new Date().toISOString();
       const neutral = createDeterministicNeutralSignal(deterministic);
+      if (fieldVerification?.asset.normalized) neutral.pair = fieldVerification.asset.normalized;
+      if (fieldVerification?.timeframe.parsedValue === 'M1') neutral.timeframe = 'M1';
       setSignal(neutral);
       setResponseTime(null);
       setHistory((current) => [createHistoryItem(neutral, 0, minConfidence), ...current].slice(0, HISTORY_LIMIT));
@@ -519,7 +529,17 @@ function App() {
         entryTimestamp: null,
         expiryTimestamp: null,
         expirySeconds: null,
-        payout: null,
+        payout: fieldVerification?.payout.payoutDecimal ?? null,
+        payoutBreakevenWinRate: fieldVerification?.payout.breakevenWinRate ?? null,
+        payoutReadReason: fieldVerification?.payout.reasonCode ?? null,
+        platformClockUtc: fieldVerification?.platformClock.parsedText ?? null,
+        secondsIntoCandle: fieldVerification?.platformClock.secondsIntoCandle ?? null,
+        chartType: fieldVerification?.chartType.detected ?? null,
+        priceAxisMin: fieldVerification?.priceAxis.min ?? null,
+        priceAxisMax: fieldVerification?.priceAxis.max ?? null,
+        priceAxisR2: fieldVerification?.priceAxis.r2 ?? null,
+        timeframeDisagreement: fieldVerification?.timeframeDisagreement ?? null,
+        fieldLegibility: fieldVerification?.legibility ?? null,
         outcome: 'NEUTRAL',
         feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
         rawDataRef: sourceArtifact.sourceFrameSha256,
@@ -545,9 +565,11 @@ function App() {
         source,
         configuredTimeframe: 'M1',
         layoutProfileVersion: LAYOUT_PROFILE_VERSION,
-        layoutReason: deterministic.layoutFound
-          ? 'CALIBRATED_LAYOUT_FOUND_BUT_REQUIRED_FIELDS_UNVERIFIED'
-          : 'LAYOUT_NOT_FOUND',
+        layoutReason: !deterministic.layoutFound
+          ? 'LAYOUT_NOT_FOUND'
+          : fieldVerification?.frameVerified && !fieldVerification.productionEligible
+            ? 'FRAME_VERIFIED_BUT_ACCEPTANCE_SET_INCOMPLETE'
+            : 'CALIBRATED_LAYOUT_FOUND_BUT_REQUIRED_FIELDS_UNVERIFIED',
         deterministicScreen: { ...deterministic, fieldVerification },
         rawModelResponseText: null,
         modelCallSkippedReason: deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT',
@@ -568,7 +590,9 @@ function App() {
         },
         nullReasons: {
           entryPrice: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
-          payout: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
+          ...(fieldVerification?.payout.payoutDecimal === null
+            ? { payout: fieldVerification?.payout.reasonCode || 'PAYOUT_UNREADABLE' }
+            : {}),
           expiry: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
           deterministicTimeframe: deterministic.timeframe.reasonCode || 'TIMEFRAME_UNVERIFIED',
           deterministicAsset: deterministic.asset.reasonCode || 'ASSET_UNVERIFIED',
@@ -635,7 +659,17 @@ function App() {
       entryTimestamp: null,
       expiryTimestamp: null,
       expirySeconds: null,
-      payout: null,
+      payout: fieldVerification?.payout.payoutDecimal ?? null,
+      payoutBreakevenWinRate: fieldVerification?.payout.breakevenWinRate ?? null,
+      payoutReadReason: fieldVerification?.payout.reasonCode ?? null,
+      platformClockUtc: fieldVerification?.platformClock.parsedText ?? null,
+      secondsIntoCandle: fieldVerification?.platformClock.secondsIntoCandle ?? null,
+      chartType: fieldVerification?.chartType.detected ?? null,
+      priceAxisMin: fieldVerification?.priceAxis.min ?? null,
+      priceAxisMax: fieldVerification?.priceAxis.max ?? null,
+      priceAxisR2: fieldVerification?.priceAxis.r2 ?? null,
+      timeframeDisagreement: fieldVerification?.timeframeDisagreement ?? null,
+      fieldLegibility: fieldVerification?.legibility ?? null,
       outcome: 'NEUTRAL',
       feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
       rawDataRef: primaryCrop ? artifacts.find((artifact) => artifact.role === 'primary')?.sha256 || null : null,
@@ -682,7 +716,9 @@ function App() {
       },
       nullReasons: {
         entryPrice: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
-        payout: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
+        ...(fieldVerification?.payout.payoutDecimal === null
+          ? { payout: fieldVerification?.payout.reasonCode || 'PAYOUT_UNREADABLE' }
+          : {}),
         expiry: 'STRUCTURED_FIELD_READER_PENDING_STAGE4',
       },
       durableWrite: 'pending',
@@ -1177,7 +1213,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.5 • Stage 3B verifier + authenticated audit/Groq proxy • validation coverage lock ON • AUDIT LOCK ON</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.6 • Stage 3C chart/axis/clock/payout verifier • acceptance lock ON • AUDIT LOCK ON</div></footer>
     </div>
   );
 }
