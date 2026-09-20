@@ -611,3 +611,29 @@ test('HistoryPanel source renders persisted item.bias directly', () => {
   const src = fs.readFileSync(new URL('../src/components/HistoryPanel.tsx', import.meta.url), 'utf8');
   assert.match(src, />\{item\.bias\}<\/span>/);
 });
+
+
+test('outcome resolver treats an invalid runtime direction as PUT instead of rejecting it', () => {
+  const snap = {
+    capturedAt: new Date(0).toISOString(),
+    platformClockUtc: null,
+    asset: 'EUR/USD',
+    price: { price: 1.1, rawText:'1.1', ocrConfidence:95, axisPredictedPrice:1.1, axisResidual:0, allowedResidual:0.001, crossCheckPassed:true, confidence:95, reasonCode:null },
+    expiry: { rawText:'00:01:00', expirySeconds:60, verifiedOneMinute:true, confidence:95, reasonCode:null },
+    payoutDecimal: 0.9,
+    payoutPercent: 90,
+    payoutConfidence: 95,
+    breakevenWinRate: 1/1.9,
+    payoutReason: null,
+    frameReasons: [],
+    priceAxisR2: 1,
+    sourceFrameSha256: 'x',
+  };
+  const expiry = {
+    ...snap,
+    capturedAt: new Date(60000).toISOString(),
+    price: { ...snap.price, price:1.0, rawText:'1.0', axisPredictedPrice:1.0 },
+  };
+  const result = outcomeResolver.resolveOutcome({ direction:'SIDEWAYS', entry:snap, expiry });
+  assert.equal(result.outcome, 'WIN');
+});
