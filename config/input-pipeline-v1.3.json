@@ -1,21 +1,25 @@
 {
-  "version": "input-pipeline-v1.3.0",
+  "version": "input-pipeline-v1.3.1",
   "auditLock": true,
   "configuredTimeframe": "M1",
   "configuredAsset": "USER_SESSION_SETTING_REQUIRED",
-  "layoutProfileVersion": "quotex-desktop-observed-v1.2.0",
+  "layoutProfileVersion": "quotex-desktop-observed-v1.2.1",
   "singleFrameOnly": true,
   "stage3c": {
     "chartType": {
       "required": "candlestick",
       "templateVersion": "quotex-candlestick-v1",
       "minimumCorrelation": 0.92,
-      "knownMismatchTemplates": ["line", "bars", "heikin_ashi"],
+      "knownMismatchTemplates": [
+        "line",
+        "bars",
+        "heikin_ashi"
+      ],
       "missingMismatchTemplateBehavior": "CHARTTYPE_UNVERIFIED"
     },
     "timeframe": {
       "logic": "explicit_1m_badge AND time_axis_candle_pitch",
-      "acceptedMinutesPerCandle": 1.0,
+      "acceptedMinutesPerCandle": 1,
       "toleranceMinutes": 0.08,
       "logDisagreement": true
     },
@@ -24,14 +28,16 @@
       "monotonicRequired": true,
       "minimumLinearR2": 0.995,
       "maximumPixelSpacingCv": 0.25,
-      "maximumPriceStepCv": 0.10,
+      "maximumPriceStepCv": 0.1,
       "currentPriceTagOcclusion": "reject_overlapping_ocr_token_do_not_repair"
     },
     "clock": {
       "label": "UTC",
       "maximumLiveStalenessSeconds": 5,
       "frozenIfSameClockAfterMs": 1500,
-      "secondsIntoCandle": "platform_utc_seconds_mod_60"
+      "secondsIntoCandle": "platform_utc_seconds_mod_60",
+      "savedCalibrationStatus": "UNVERIFIED_NO_EXPLICIT_HH_MM_SS_LIVE_CLOCK",
+      "expiryTimerUsedAsClock": false
     },
     "payout": {
       "source": "asset_label_area",
@@ -49,9 +55,17 @@
     "requiredSessions": 3,
     "requiredAssets": 2,
     "requiredWindowOrZoomStates": 2,
-    "requiredRealNonM1": ["5s", "15s", "30s", "5m", "15m"],
+    "requiredRealNonM1": [
+      "5s",
+      "15s",
+      "30s",
+      "5m",
+      "15m"
+    ],
     "complete": false,
-    "effect": "AI_CALL_BLOCKED_WITH_LAYOUT_VALIDATION_INCOMPLETE"
+    "effect": "AI_CALL_BLOCKED_WITH_LAYOUT_VALIDATION_INCOMPLETE",
+    "manifestSchema": "stage3c-session-manifest-v1",
+    "autoUnlock": false
   },
   "outcomeDataUsedForRules": false
 }

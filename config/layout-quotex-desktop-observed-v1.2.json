@@ -1,13 +1,23 @@
 {
-  "version": "quotex-desktop-observed-v1.2.0",
+  "version": "quotex-desktop-observed-v1.2.1",
   "calibration": {
     "sessionCount": 1,
     "sameSessionFrames": 10,
     "tradeOutcomesUsed": false
   },
   "regionsAddedInStage3C": {
-    "chartTypeToolbar": { "x": 0.045, "y": 0.70, "w": 0.10, "h": 0.295 },
-    "platformClock": { "x": 0.055, "y": 0.125, "w": 0.18, "h": 0.075 }
+    "chartTypeToolbar": {
+      "x": 0.045,
+      "y": 0.7,
+      "w": 0.1,
+      "h": 0.295
+    },
+    "platformClock": {
+      "x": 0.045,
+      "y": 0.915,
+      "w": 0.14,
+      "h": 0.08
+    }
   },
   "chartTypeEvidence": {
     "expected": "candlestick",
@@ -51,6 +61,14 @@
     "Calibration evidence is still one session.",
     "No real non-M1 frames have been supplied.",
     "No real line/bar/Heikin-Ashi frames have been supplied.",
+    "No explicit HH:MM:SS UTC live platform clock is visible in the saved calibration frames; clock verification therefore remains CLOCK_UNREADABLE on that evidence.",
     "Acceptance set is empty, so LAYOUT_VALIDATION_INCOMPLETE remains active."
-  ]
+  ],
+  "clockEvidence": {
+    "observedTimezoneMarker": "UTC",
+    "observedLiveClockWithSeconds": false,
+    "savedCalibrationStatus": "UNVERIFIED",
+    "reason": "AVAILABLE_SAVED_FRAMES_SHOW_UTC_TIMEZONE_MARKER_AND_TIME_AXIS_LABELS_BUT_NO_EXPLICIT_HH_MM_SS_LIVE_CLOCK",
+    "expiryTimerUsedAsClock": false
+  }
 }

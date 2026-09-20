@@ -1,0 +1,27 @@
+{
+  "version": "stage3c-session-manifest-v1",
+  "sessions": [
+    {
+      "sessionId": "calibration-session-001",
+      "split": "calibration",
+      "asset": "CAD/CHF (OTC)",
+      "timeframe": "M1",
+      "chartType": "candlestick",
+      "windowState": "observed-desktop-calibration",
+      "frames": [
+        {
+          "frameId": "calibration-placeholder",
+          "expectedGate": "CALIBRATION_ONLY",
+          "actualGate": "CALIBRATION_ONLY",
+          "fields": {
+            "note": "Existing calibration session is never reused as acceptance data."
+          }
+        }
+      ]
+    }
+  ],
+  "liveAcceptance": {
+    "postDeploymentDecisions": 0,
+    "replayMatches": 0
+  }
+}

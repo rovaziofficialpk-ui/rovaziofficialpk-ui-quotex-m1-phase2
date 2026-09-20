@@ -100,3 +100,17 @@ test('session split contains no overlap by construction',()=>{
   const acceptance=new Set([]);
   for(const id of acceptance) assert.equal(calibration.has(id),false);
 });
+
+
+test('session validator refuses calibration/acceptance overlap conceptually',()=>{
+  const calibration=new Set(['session-1']);
+  const acceptance=['session-1','session-2'];
+  const overlap=acceptance.filter((id)=>calibration.has(id));
+  assert.deepEqual(overlap,['session-1']);
+});
+
+test('Stage 3C coverage stays incomplete without all required real non-M1 labels',()=>{
+  const required=['5s','15s','30s','5m','15m'];
+  const present=['5s','15s','5m'];
+  assert.deepEqual(required.filter((x)=>!present.includes(x)),['30s','15m']);
+});

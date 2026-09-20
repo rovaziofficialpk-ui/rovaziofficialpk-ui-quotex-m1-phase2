@@ -1,6 +1,6 @@
 {
   "name": "quotex-m1-chart-analysis",
-  "version": "0.4.6-phase4a6-stage3c",
+  "version": "0.4.6-phase4a6-stage3c-r1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "start": "node server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "audit:replay": "node scripts/replay-audit.mjs"
+    "audit:replay": "node scripts/replay-audit.mjs",
+    "stage3c:validate": "node scripts/stage3c-validation-summary.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",

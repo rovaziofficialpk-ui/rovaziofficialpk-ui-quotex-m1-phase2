@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Stage 3C labeled recording manifest",
+  "type": "object",
+  "required": [
+    "version",
+    "sessions",
+    "liveAcceptance"
+  ],
+  "properties": {
+    "version": {
+      "const": "stage3c-session-manifest-v1"
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "split",
+          "asset",
+          "timeframe",
+          "chartType",
+          "windowState",
+          "frames"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "split": {
+            "enum": [
+              "calibration",
+              "acceptance"
+            ]
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeframe": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chartType": {
+            "enum": [
+              "candlestick",
+              "line",
+              "bars",
+              "heikin_ashi"
+            ]
+          },
+          "windowState": {
+            "type": "string",
+            "minLength": 1
+          },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "frameId",
+                "expectedGate",
+                "actualGate",
+                "fields"
+              ],
+              "properties": {
+                "frameId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expectedGate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "actualGate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fields": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "liveAcceptance": {
+      "type": "object",
+      "required": [
+        "postDeploymentDecisions",
+        "replayMatches"
+      ],
+      "properties": {
+        "postDeploymentDecisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replayMatches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

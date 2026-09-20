@@ -45,19 +45,22 @@ Real high-resolution calibration frame:
 - price-step CV: effectively 0
 
 ## 4. Platform UTC clock
-A dedicated platform-clock crop and OCR mode were added.
-Accepted forms:
-- HH:MM:SS with UTC token
-- HHMMSS only when the same dedicated crop also contains a high-confidence UTC token
+The Stage 3C audit found and corrected a crop-definition error: the first Phase 4A.6 platformClock rectangle pointed at the upper-left asset area. It was fail-closed, but the metadata was wrong.
 
-The live checker compares platform UTC to authenticated server UTC.
-Frozen settings:
+The corrected candidate region is the lower-left UTC/time area. In the available saved calibration frames it contains the UTC timezone marker and chart time-axis labels, but **no explicit live HH:MM:SS platform clock** was found. Those axis labels are not reinterpreted as a live clock.
+
+Accepted live forms remain:
+- HH:MM:SS with a high-confidence UTC token in the same dedicated region
+- HHMMSS only with a high-confidence UTC token in that same region
+
+Until such a live clock is actually present and parsed, the field is `CLOCK_UNREADABLE` and the frame remains NEUTRAL.
+
+If a valid live clock is present, the checker compares it with authenticated server UTC using frozen rules:
 - stale if absolute circular UTC difference > 5 seconds
 - frozen if the exact same parsed clock persists across observations >1500 ms apart
+- secondsIntoCandle = parsed UTC second modulo 60
 
-secondsIntoCandle = parsed UTC second modulo 60.
-
-Saved historical frames cannot be used for a live staleness acceptance check against today's server time. That check remains for post-deployment live decisions.
+The trade expiry/timer is never used as the platform clock or chart timeframe.
 
 ## 5. Payout
 The payout is read from the same asset-label card rather than from freeform AI output.
@@ -105,3 +108,15 @@ GROQ_API_KEY is still absent from the Railway environment, so model calls cannot
 
 ## Stages 4–9
 Not continued. Stage 3C acceptance is incomplete.
+
+
+## Session validation intake
+A versioned session-manifest schema and validator are included for future labeled recordings. The validator:
+- splits only by SESSION
+- refuses calibration/acceptance session overlap
+- requires the real non-M1 acceptance labels 5s, 15s, 30s, 5m and 15m
+- requires multiple assets and window/zoom states
+- lists every frame failure
+- never changes the production coverage constant automatically
+
+The current acceptance manifest is still empty, so no acceptance result is manufactured.

@@ -1,5 +1,5 @@
 {
-  "version": "stage3c-validation-v1",
+  "version": "stage3c-validation-v1.1",
   "splitUnit": "SESSION",
   "calibration": [
     {
@@ -9,7 +9,9 @@
       "timeframe": "M1",
       "chartType": "candlestick",
       "frameCountUsed": 10,
-      "layouts": ["observed-desktop-736x334-family"],
+      "layouts": [
+        "observed-desktop-736x334-family"
+      ],
       "usedForThresholdCalibration": true
     }
   ],
@@ -18,7 +20,13 @@
     "minimumSessionsTotal": 3,
     "minimumAssets": 2,
     "minimumWindowOrZoomStates": 2,
-    "realNonM1Timeframes": ["5s", "15s", "30s", "5m", "15m"],
+    "realNonM1Timeframes": [
+      "5s",
+      "15s",
+      "30s",
+      "5m",
+      "15m"
+    ],
     "fivePostDeploymentLiveDecisions": true,
     "fiveReplayMatches": true
   },
@@ -30,5 +38,12 @@
     "at least one additional window size or browser zoom state",
     "real 5s, 15s, 30s, 5m and 15m frames",
     "five real post-deployment live decisions"
+  ],
+  "manifestSchema": "stage3c-session-manifest-v1",
+  "autoUnlock": false,
+  "notes": [
+    "Production coverage is not changed by this file or the validator.",
+    "Calibration and acceptance session IDs must be disjoint.",
+    "Frames from calibration-session-001 remain calibration-only."
   ]
 }
