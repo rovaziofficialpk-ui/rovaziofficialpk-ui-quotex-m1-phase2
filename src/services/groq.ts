@@ -1,7 +1,7 @@
 import { SIGNAL_SCHEMA, applySignalGate, validateModelSignal, type TradeSignal } from '../signalLogic';
 import type { ImagePreflightResult } from './imagePreflight';
+import { apiFetch } from './apiClient';
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const GROQ_MODEL = 'qwen/qwen3.8-27b';
 export const GROQ_PROMPT_VERSION = 'vision-signal-v4.0.0';
 export const GROQ_TEMPERATURE = 0;
@@ -121,11 +121,10 @@ export async function analyzeChartWithGroq(args: {
   }
 
   try {
-    const response = await fetch(GROQ_URL, {
+    const response = await apiFetch('/api/groq/analyze', {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${args.apiKey.trim()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -189,19 +188,10 @@ export async function analyzeChartWithGroq(args: {
   }
 }
 
-export async function testGroqConnection(apiKey: string): Promise<void> {
-  const response = await fetch(GROQ_URL, {
+export async function testGroqConnection(_apiKey: string): Promise<void> {
+  const response = await apiFetch('/api/groq/test', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: 'Say "OK" only.' }],
-      max_tokens: 5,
-      reasoning_effort: 'none',
-    }),
+    headers: { 'Content-Type': 'application/json' },
   });
 
   if (!response.ok) {

@@ -1,0 +1,49 @@
+{
+  "version": "input-pipeline-v1.2.0",
+  "auditLock": true,
+  "configuredTimeframe": "M1",
+  "configuredAsset": "USER_SESSION_SETTING_REQUIRED",
+  "layoutProfileVersion": "quotex-desktop-observed-v1.1.0",
+  "singleFrameOnly": true,
+  "fieldVerification": {
+    "explicitTimeframeBadge": {
+      "templateVersion": "quotex-1m-template-v1",
+      "minimumCorrelation": 0.985
+    },
+    "timeAxisCrossCheck": {
+      "minimumValidTickIntervals": 3,
+      "acceptedMinutesPerCandle": 1.0,
+      "toleranceMinutes": 0.08,
+      "acceptedFormats": ["HH:MM", "HH:MM:SS"],
+      "midnightRollover": true
+    },
+    "ocr": {
+      "engine": "tesseract-5",
+      "minimumTokenConfidence": 70,
+      "asset": "strict three-letter-pair parser, optional explicit OTC suffix",
+      "priceAxisMinimumLabels": 4
+    }
+  },
+  "privacy": {
+    "persistRawSourceBytes": false,
+    "persistOriginalSourceSha256": true,
+    "persistMaskedSourceFrame": true,
+    "persistExactAiCrop": true
+  },
+  "security": {
+    "protectedApiHeader": "X-Audit-Token",
+    "clientGroqKeyAllowed": false,
+    "groqRoute": "/api/groq/analyze",
+    "auditRoutesRequireAuth": true,
+    "replayRoutesRequireAuth": true
+  },
+  "validationCoverage": {
+    "requiredSessions": 3,
+    "requiredAssets": 2,
+    "requiredWindowOrZoomStates": 2,
+    "realNonM1FramesRequired": true,
+    "complete": false,
+    "effect": "AI_CALL_BLOCKED_WITH_LAYOUT_VALIDATION_INCOMPLETE"
+  },
+  "outcomeDataUsedForRules": false
+}

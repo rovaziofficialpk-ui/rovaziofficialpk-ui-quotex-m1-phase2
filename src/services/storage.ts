@@ -9,9 +9,10 @@ const KEYS = {
 export interface AppSettings {
   minConfidence: number;
   autoIntervalSeconds: number;
+  configuredAsset: string | null;
 }
 
-const DEFAULT_SETTINGS: AppSettings = { minConfidence: 70, autoIntervalSeconds: 5 };
+const DEFAULT_SETTINGS: AppSettings = { minConfidence: 70, autoIntervalSeconds: 5, configuredAsset: null };
 const MAX_HISTORY = 100;
 
 function canUseStorage(): boolean {
@@ -59,6 +60,9 @@ export function loadSettings(): AppSettings {
     const parsed = JSON.parse(safeGet(KEYS.settings) || 'null') as Partial<AppSettings> | null;
     const minConfidence = Number(parsed?.minConfidence);
     const autoIntervalSeconds = Number(parsed?.autoIntervalSeconds);
+    const configuredAsset = typeof parsed?.configuredAsset === 'string' && parsed.configuredAsset.trim()
+      ? parsed.configuredAsset.trim().toUpperCase()
+      : null;
     return {
       minConfidence: Number.isFinite(minConfidence)
         ? Math.max(50, Math.min(90, Math.round(minConfidence)))
@@ -66,6 +70,7 @@ export function loadSettings(): AppSettings {
       autoIntervalSeconds: [3, 5, 10, 15, 30].includes(autoIntervalSeconds)
         ? autoIntervalSeconds
         : DEFAULT_SETTINGS.autoIntervalSeconds,
+      configuredAsset,
     };
   } catch {
     return DEFAULT_SETTINGS;

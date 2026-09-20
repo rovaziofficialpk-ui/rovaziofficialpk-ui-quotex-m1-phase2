@@ -1,8 +1,8 @@
 import type { TradeSignal } from '../signalLogic';
 
-export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.0.0';
-export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.1.0';
-export const LAYOUT_PROFILE_VERSION = 'quotex-desktop-observed-v1.0.0';
+export const SCREEN_PIPELINE_VERSION = 'screen-input-v1.1.0';
+export const INPUT_PIPELINE_CONFIG_VERSION = 'input-pipeline-v1.2.0';
+export const LAYOUT_PROFILE_VERSION = 'quotex-desktop-observed-v1.1.0';
 
 export type ScreenReasonCode =
   | 'LAYOUT_NOT_FOUND'
@@ -16,7 +16,8 @@ export type ScreenReasonCode =
   | 'TIMEFRAME_UNVERIFIED'
   | 'TIMEFRAME_MISMATCH'
   | 'ASSET_UNVERIFIED'
-  | 'ASSET_MISMATCH';
+  | 'ASSET_MISMATCH'
+  | 'LAYOUT_VALIDATION_INCOMPLETE';
 
 export type CropRole =
   | 'primary'
@@ -25,6 +26,7 @@ export type CropRole =
   | 'priceAxis'
   | 'timeAxis'
   | 'assetLabel'
+  | 'timeframeBadge'
   | 'tradePanel'
   | 'payoutExpiryPanel';
 
@@ -55,6 +57,8 @@ export interface DeterministicScreenMetrics {
   horizontalMarkerRowRatio: number;
   outerNearBlackRatio: number;
   candleCount: number;
+  candlePitchPx: number | null;
+  candleCentersPx: number[];
   lastCandleXFraction: number | null;
 }
 
@@ -94,6 +98,7 @@ const PROFILE = {
     priceAxis: { x: 0.81521739, y: 0.12874251, w: 0.07201087, h: 0.76946108 },
     timeAxis: { x: 0.04755435, y: 0.89820359, w: 0.83967391, h: 0.10179641 },
     assetLabel: { x: 0.05978261, y: 0.05389222, w: 0.16304348, h: 0.09580838 },
+    timeframeBadge: { x: 0.07472826, y: 0.88922156, w: 0.03668478, h: 0.08682635 },
     tradePanel: { x: 0.88722826, y: 0.05389222, w: 0.11277174, h: 0.94610778 },
     payoutExpiryPanel: { x: 0.88722826, y: 0.05389222, w: 0.11277174, h: 0.43413174 },
   } satisfies Record<CropRole, RelativeRect>,
@@ -180,7 +185,14 @@ function outerNearBlackRatio(data: ImageData): number {
   return black / Math.max(1, total);
 }
 
-function candleColumnGroups(data: ImageData): { count: number; lastXFraction: number | null } {
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function candleColumnGroups(data: ImageData): { count: number; centers: number[]; pitchPx: number | null; lastXFraction: number | null } {
   const minimumPixelsPerColumn = Math.max(5, Math.round(data.height * 0.015));
   const active = new Array<boolean>(data.width).fill(false);
   for (let x = 0; x < data.width; x += 1) {
@@ -211,9 +223,20 @@ function candleColumnGroups(data: ImageData): { count: number; lastXFraction: nu
       start = null;
     }
   }
+
+  const centers = groups.map((group) => (group.start + group.end) / 2);
+  const diffs = centers.slice(1).map((center, index) => center - centers[index]).filter((value) => value > 1);
+  const roughPitch = median(diffs);
+  const stableDiffs = roughPitch === null
+    ? []
+    : diffs.filter((value) => value >= roughPitch * 0.65 && value <= roughPitch * 1.35);
+  const pitchPx = median(stableDiffs.length ? stableDiffs : diffs);
   const last = groups.length ? groups[groups.length - 1] : undefined;
+
   return {
     count: groups.length,
+    centers,
+    pitchPx,
     lastXFraction: last ? ((last.start + last.end) / 2) / data.width : null,
   };
 }
@@ -246,6 +269,7 @@ export function decideDeterministicScreenGate(args: {
   parsedAsset: string | null;
   priceAxisReadable: boolean;
   timeAxisReadable: boolean;
+  structuralOnly?: boolean;
 }): { safeForAi: boolean; reasonCode: ScreenReasonCode | null; reasons: ScreenReasonCode[] } {
   const { metrics } = args;
   const reasons: ScreenReasonCode[] = [];
@@ -263,14 +287,16 @@ export function decideDeterministicScreenGate(args: {
   if (metrics.candleCount < PROFILE.minCandles || metrics.candleCount > PROFILE.maxCandles) reasons.push('CANDLE_COUNT_OUT_OF_RANGE');
   if (metrics.lastCandleXFraction === null || metrics.lastCandleXFraction < 0.45 || metrics.lastCandleXFraction > 0.80) reasons.push('NEWEST_CANDLE_NOT_VISIBLE');
   if (metrics.currentPriceBlueRatio < PROFILE.minPriceBlue || metrics.horizontalMarkerRowRatio < PROFILE.minMarkerRow) reasons.push('CURRENT_PRICE_MARKER_MISSING');
-  if (!args.priceAxisReadable) reasons.push('PRICE_AXIS_UNREADABLE');
-  if (!args.timeAxisReadable) reasons.push('TIME_AXIS_UNREADABLE');
+  if (!args.structuralOnly) {
+    if (!args.priceAxisReadable) reasons.push('PRICE_AXIS_UNREADABLE');
+    if (!args.timeAxisReadable) reasons.push('TIME_AXIS_UNREADABLE');
 
-  if (!args.parsedTimeframe) reasons.push('TIMEFRAME_UNVERIFIED');
-  else if (args.parsedTimeframe !== args.configuredTimeframe) reasons.push('TIMEFRAME_MISMATCH');
+    if (!args.parsedTimeframe) reasons.push('TIMEFRAME_UNVERIFIED');
+    else if (args.parsedTimeframe !== args.configuredTimeframe) reasons.push('TIMEFRAME_MISMATCH');
 
-  if (!args.configuredAsset || !args.parsedAsset) reasons.push('ASSET_UNVERIFIED');
-  else if (args.parsedAsset !== args.configuredAsset) reasons.push('ASSET_MISMATCH');
+    if (!args.configuredAsset || !args.parsedAsset) reasons.push('ASSET_UNVERIFIED');
+    else if (args.parsedAsset !== args.configuredAsset) reasons.push('ASSET_MISMATCH');
+  }
 
   return { safeForAi: reasons.length === 0, reasonCode: reasons[0] || null, reasons };
 }
@@ -312,6 +338,8 @@ export async function inspectAndCropSingleFrame(sourceDataUrl: string, configure
     horizontalMarkerRowRatio: Number(horizontalMarkerRatio(plotData).toFixed(4)),
     outerNearBlackRatio: Number(outerNearBlackRatio(fullData).toFixed(4)),
     candleCount: candleGroups.count,
+    candlePitchPx: candleGroups.pitchPx === null ? null : Number(candleGroups.pitchPx.toFixed(3)),
+    candleCentersPx: candleGroups.centers.map((value) => Number(value.toFixed(2))),
     lastCandleXFraction: candleGroups.lastXFraction === null ? null : Number(candleGroups.lastXFraction.toFixed(3)),
   };
 
@@ -319,16 +347,16 @@ export async function inspectAndCropSingleFrame(sourceDataUrl: string, configure
     rawText: null,
     parsedValue: null,
     confidence: 'unverified',
-    reasonCode: 'NO_EXPLICIT_TIMEFRAME_LABEL_VISIBLE_IN_CALIBRATION',
+    reasonCode: 'PENDING_STRUCTURED_VERIFICATION',
   };
   const asset: ParsedScreenField = {
     rawText: null,
     parsedValue: null,
     confidence: 'unverified',
-    reasonCode: configuredAsset ? 'DETERMINISTIC_ASSET_READER_NOT_CALIBRATED' : 'CONFIGURED_ASSET_MISSING',
+    reasonCode: configuredAsset ? 'PENDING_STRUCTURED_VERIFICATION' : 'CONFIGURED_ASSET_MISSING',
   };
-  const priceAxis = { readable: false, min: null, max: null, reasonCode: 'DETERMINISTIC_OCR_NOT_CALIBRATED' };
-  const timeAxis = { readable: false, spanSeconds: null, reasonCode: 'DETERMINISTIC_OCR_NOT_CALIBRATED' };
+  const priceAxis = { readable: false, min: null, max: null, reasonCode: 'PENDING_STRUCTURED_VERIFICATION' };
+  const timeAxis = { readable: false, spanSeconds: null, reasonCode: 'PENDING_STRUCTURED_VERIFICATION' };
 
   const gate = decideDeterministicScreenGate({
     metrics,
@@ -338,6 +366,7 @@ export async function inspectAndCropSingleFrame(sourceDataUrl: string, configure
     parsedAsset: null,
     priceAxisReadable: false,
     timeAxisReadable: false,
+    structuralOnly: true,
   });
 
   return {
@@ -347,7 +376,7 @@ export async function inspectAndCropSingleFrame(sourceDataUrl: string, configure
     layoutFound: !gate.reasons.includes('LAYOUT_NOT_FOUND'),
     metrics,
     crops: (Object.keys(PROFILE.regions) as CropRole[]).map((role) => cropImage(image, role, rects[role])),
-    missingCrops: [{ role: 'timeframeLabel', reasonCode: 'TIMEFRAME_LABEL_NOT_VISIBLE_IN_CALIBRATION' }],
+    missingCrops: [],
     timeframe,
     asset,
     priceAxis,

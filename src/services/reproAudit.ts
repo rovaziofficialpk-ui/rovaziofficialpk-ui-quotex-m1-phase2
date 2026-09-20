@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient';
 import type { AuditArtifact } from './auditArtifacts';
 
 export interface ReproDecisionRecord {
@@ -72,7 +73,7 @@ export async function appendLocalReproRecord(record: ReproDecisionRecord): Promi
 export async function persistReproDecision(record: ReproDecisionRecord, artifacts: AuditArtifact[]): Promise<{ durable: boolean; recordHash: string | null }> {
   await appendLocalReproRecord(record);
   try {
-    const response = await fetch('/api/audit/records', {
+    const response = await apiFetch('/api/audit/records', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ record: { ...record, durableWrite: 'ok' }, artifacts }),

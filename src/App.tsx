@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { ApiKeyPanel } from './components/ApiKeyPanel';
+import { SecurityPanel } from './components/SecurityPanel';
 import { AutoTestPanel, type AutoTestStats, type AutoTestStatus } from './components/AutoTestPanel';
 import { BacktestPanel } from './components/BacktestPanel';
 import { ContextImagesPanel } from './components/ContextImagesPanel';
@@ -30,7 +30,9 @@ import {
   type ContextImage,
   type ContextLabel,
 } from './services/groq';
-import { buildAuditArtifact, buildFullFrameArtifact } from './services/auditArtifacts';
+import { buildAuditArtifact, buildPrivacyMaskedSourceArtifact } from './services/auditArtifacts';
+import { clearAuditToken, getServerHealth, loadAuditToken, saveAuditToken, verifyAuditAuth, logSettingChange, type ServerHealth } from './services/apiClient';
+import { verifyStructuredScreenFields } from './services/screenFieldVerification';
 import {
   INPUT_PIPELINE_CONFIG_VERSION,
   LAYOUT_PROFILE_VERSION,
@@ -47,7 +49,7 @@ import {
   savePrecisionProfile,
   type PrecisionProfile,
 } from './services/precisionOptimizer';
-import { clearApiKey, HISTORY_LIMIT, loadApiKey, loadHistory, loadSettings, saveApiKey, saveHistory, saveSettings } from './services/storage';
+import { clearApiKey, HISTORY_LIMIT, loadHistory, loadSettings, saveHistory, saveSettings } from './services/storage';
 import {
   captureLiveTabFrame,
   captureLiveTabFrameDetailed,
@@ -63,7 +65,6 @@ import { createHistoryItem, type SignalHistoryItem, type TradeSignal } from './s
 import { exportHistoryCsv, exportHistoryJson } from './utils/exportHistory';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const CONFIGURED_ASSET: string | null = null;
 type PrimarySource = 'upload' | 'paste' | 'live';
 type AnalysisStage = 'idle' | 'capturing' | 'preflight' | 'ai';
 
@@ -78,7 +79,10 @@ function App() {
   const autoConsecutiveErrorsRef = useRef(0);
   const autoLastBiasRef = useRef<string | null>(null);
   const autoStableStreakRef = useRef(0);
-  const [apiKey, setApiKey] = useState(() => loadApiKey());
+  const [auditToken, setAuditTokenState] = useState(() => loadAuditToken());
+  const [authVerified, setAuthVerified] = useState(false);
+  const [serverHealth, setServerHealth] = useState<ServerHealth | null>(null);
+  const [securityBusy, setSecurityBusy] = useState(false);
   const [image, setImage] = useState<string | null>(null);
   const [primarySource, setPrimarySource] = useState<PrimarySource>('upload');
   const [liveTabInfo, setLiveTabInfo] = useState<LiveTabInfo | null>(null);
@@ -95,6 +99,7 @@ function App() {
   const [pasteToast, setPasteToast] = useState(false);
   const [minConfidence, setMinConfidence] = useState(() => loadSettings().minConfidence);
   const [autoIntervalSeconds, setAutoIntervalSeconds] = useState(() => loadSettings().autoIntervalSeconds || AUTO_CAPTURE_INTERVAL_SECONDS);
+  const [configuredAsset, setConfiguredAsset] = useState(() => loadSettings().configuredAsset || '');
   const [autoTestEnabled, setAutoTestEnabled] = useState(false);
   const [backtestOpen, setBacktestOpen] = useState(false);
   const [precisionProfile, setPrecisionProfile] = useState<PrecisionProfile | null>(() => loadPrecisionProfile());
@@ -112,12 +117,42 @@ function App() {
     lastRunAt: null,
   });
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const apiKey = authVerified ? 'server' : '';
 
   const liveTabSupported = isLiveTabCaptureSupported();
   const liveTabActive = Boolean(liveTabInfo && isLiveTabStreamActive(liveStreamRef.current));
 
-  useEffect(() => saveSettings({ minConfidence, autoIntervalSeconds }), [minConfidence, autoIntervalSeconds]);
+  useEffect(() => saveSettings({
+    minConfidence,
+    autoIntervalSeconds,
+    configuredAsset: configuredAsset.trim() || null,
+  }), [minConfidence, autoIntervalSeconds, configuredAsset]);
   useEffect(() => saveHistory(history), [history]);
+
+  useEffect(() => {
+    clearApiKey();
+    let cancelled = false;
+    void getServerHealth()
+      .then(async (health) => {
+        if (cancelled) return;
+        setServerHealth(health);
+        if (auditToken) {
+          try {
+            const auth = await verifyAuditAuth();
+            if (!cancelled) {
+              setAuthVerified(auth.authenticated);
+              setServerHealth((current) => current ? { ...current, groqConfigured: auth.groqConfigured } : health);
+            }
+          } catch {
+            if (!cancelled) setAuthVerified(false);
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setServerHealth(null);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => () => {
     autoRunningRef.current = false;
@@ -326,26 +361,64 @@ function App() {
     }
   };
 
-  const handleApiKeyChange = (value: string) => {
+  const handleAuthenticate = async (token: string) => {
     if (autoRunningRef.current) stopAutoTest();
-    setApiKey(value);
-    saveApiKey(value);
-    setTestState('idle');
+    setSecurityBusy(true);
+    setError('');
+    try {
+      saveAuditToken(token);
+      setAuditTokenState(token);
+      const auth = await verifyAuditAuth();
+      setAuthVerified(auth.authenticated);
+      setServerHealth((current) => current
+        ? { ...current, groqConfigured: auth.groqConfigured }
+        : {
+          ok: true,
+          durableAudit: true,
+          authConfigured: true,
+          groqConfigured: auth.groqConfigured,
+          ocrConfigured: true,
+          auditLock: true,
+        });
+    } catch (err) {
+      clearAuditToken();
+      setAuditTokenState('');
+      setAuthVerified(false);
+      setError(err instanceof Error ? err.message : 'Audit authentication failed.');
+    } finally {
+      setSecurityBusy(false);
+    }
   };
 
-  const handleApiKeyClear = () => {
+  const handleLogout = () => {
     if (autoRunningRef.current) stopAutoTest();
-    setApiKey('');
-    clearApiKey();
-    setTestState('idle');
+    clearAuditToken();
+    setAuditTokenState('');
+    setAuthVerified(false);
+  };
+
+  const handleMinConfidenceChange = (value: number) => {
+    void logSettingChange('minConfidence', minConfidence, value, INPUT_PIPELINE_CONFIG_VERSION);
+    setMinConfidence(value);
+  };
+
+  const handleAutoIntervalChange = (value: number) => {
+    void logSettingChange('autoIntervalSeconds', autoIntervalSeconds, value, INPUT_PIPELINE_CONFIG_VERSION);
+    setAutoIntervalSeconds(value);
+  };
+
+  const handleConfiguredAssetChange = (value: string) => {
+    const normalized = value.toUpperCase();
+    void logSettingChange('configuredAsset', configuredAsset || null, normalized || null, INPUT_PIPELINE_CONFIG_VERSION);
+    setConfiguredAsset(normalized);
   };
 
   const handleTestConnection = async () => {
-    if (!apiKey.trim()) return;
+    if (!authVerified) return;
     setTestState('testing');
     setError('');
     try {
-      await testGroqConnection(apiKey);
+      await testGroqConnection('server');
       setTestState('ok');
     } catch (err) {
       setTestState('error');
@@ -370,10 +443,10 @@ function App() {
         : 'upload';
 
     const deterministicStartedAt = performance.now();
-    const deterministic = await inspectAndCropSingleFrame(analysisImage, CONFIGURED_ASSET);
-    const deterministicScreenMs = Math.round(performance.now() - deterministicStartedAt);
+    let deterministic = await inspectAndCropSingleFrame(analysisImage, configuredAsset.trim() || null);
+    const structuralMs = Math.round(performance.now() - deterministicStartedAt);
 
-    const sourceArtifact = await buildFullFrameArtifact('source_frame', analysisImage, auditMeta.capturedAt);
+    const sourceArtifact = await buildPrivacyMaskedSourceArtifact(analysisImage, auditMeta.capturedAt);
     const cropArtifacts = await Promise.all(deterministic.crops.map((crop) => (
       buildAuditArtifact({
         role: crop.role,
@@ -381,12 +454,48 @@ function App() {
         capturedAt: auditMeta.capturedAt,
         cropRect: crop.rect,
         sourceFrameSize: sourceArtifact.sourceFrameSize,
-        sourceFrameSha256: sourceArtifact.sha256,
+        sourceFrameSha256: sourceArtifact.sourceFrameSha256,
       })
     )));
     const artifacts = [sourceArtifact, ...cropArtifacts];
 
     const capturedMs = auditMeta.capturedAt ? Date.parse(auditMeta.capturedAt) : Number.NaN;
+
+    let fieldVerification: Awaited<ReturnType<typeof verifyStructuredScreenFields>> | null = null;
+    let deterministicScreenMs = structuralMs;
+    if (deterministic.safeForAi) {
+      const fieldStartedAt = performance.now();
+      fieldVerification = await verifyStructuredScreenFields({
+        crops: deterministic.crops,
+        metrics: deterministic.metrics,
+        configuredAsset: configuredAsset.trim() || null,
+      });
+      deterministicScreenMs += Math.round(performance.now() - fieldStartedAt);
+
+      const fieldReasons = [...fieldVerification.reasons];
+      if (fieldVerification.frameVerified && !fieldVerification.productionEligible) {
+        fieldReasons.push('LAYOUT_VALIDATION_INCOMPLETE');
+      }
+      deterministic = {
+        ...deterministic,
+        safeForAi: fieldVerification.productionEligible,
+        reasonCode: (fieldReasons[0] || null),
+        reasons: Array.from(new Set([...deterministic.reasons, ...fieldReasons])),
+        timeframe: fieldVerification.timeframe,
+        asset: fieldVerification.asset,
+        priceAxis: {
+          readable: fieldVerification.priceAxis.readable,
+          min: fieldVerification.priceAxis.min,
+          max: fieldVerification.priceAxis.max,
+          reasonCode: fieldVerification.priceAxis.reasonCode,
+        },
+        timeAxis: {
+          readable: fieldVerification.timeAxis.readable,
+          spanSeconds: fieldVerification.timeAxis.spanSeconds,
+          reasonCode: fieldVerification.timeAxis.reasonCode,
+        },
+      };
+    }
     const persistRecord = async (record: ReproDecisionRecord) => {
       const durable = await persistReproDecision(record, artifacts);
       if (!durable.durable) {
@@ -413,7 +522,7 @@ function App() {
         payout: null,
         outcome: 'NEUTRAL',
         feed: primarySource === 'live' ? 'Quotex shared-tab visual feed' : 'Uploaded chart image; feed unknown',
-        rawDataRef: sourceArtifact.sha256,
+        rawDataRef: sourceArtifact.sourceFrameSha256,
       })).catch(() => undefined);
 
       const decisionMs = Date.parse(decisionAt);
@@ -439,7 +548,7 @@ function App() {
         layoutReason: deterministic.layoutFound
           ? 'CALIBRATED_LAYOUT_FOUND_BUT_REQUIRED_FIELDS_UNVERIFIED'
           : 'LAYOUT_NOT_FOUND',
-        deterministicScreen: deterministic,
+        deterministicScreen: { ...deterministic, fieldVerification },
         rawModelResponseText: null,
         modelCallSkippedReason: deterministic.reasonCode || 'DETERMINISTIC_SCREEN_REJECT',
         preflight: analysisPreflight,
@@ -458,9 +567,9 @@ function App() {
           totalCaptureToDecision,
         },
         nullReasons: {
-          entryPrice: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
-          payout: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
-          expiry: 'STRUCTURED_SCREEN_FIELD_READER_NOT_REACHED_DUE_STAGE3_STOP',
+          entryPrice: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
+          payout: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
+          expiry: 'STRUCTURED_FIELD_READER_STAGE4_NOT_ACTIVE',
           deterministicTimeframe: deterministic.timeframe.reasonCode || 'TIMEFRAME_UNVERIFIED',
           deterministicAsset: deterministic.asset.reasonCode || 'ASSET_UNVERIFIED',
           priceAxis: deterministic.priceAxis.reasonCode || 'PRICE_AXIS_UNREADABLE',
@@ -553,7 +662,7 @@ function App() {
       configuredTimeframe: 'M1',
       layoutProfileVersion: LAYOUT_PROFILE_VERSION,
       layoutReason: 'CALIBRATED_LAYOUT_AND_DETERMINISTIC_CHECKS_PASSED',
-      deterministicScreen: deterministic,
+      deterministicScreen: { ...deterministic, fieldVerification },
       rawModelResponseText: result.rawApiResponseText,
       modelCallSkippedReason: null,
       preflight: primaryPreflight,
@@ -595,7 +704,7 @@ function App() {
       return;
     }
     if (!apiKey.trim()) {
-      setError('Add your Groq API key before starting Auto Test.');
+      setError('Authenticate the secure audit session before starting Auto Test.');
       return;
     }
     if (!liveTabActive) {
@@ -642,7 +751,7 @@ function App() {
       return;
     }
     if (!apiKey.trim()) {
-      setError('Auto Test stopped because the Groq API key is missing.');
+      setError('Auto Test stopped because the secure audit session is not authenticated.');
       stopAutoTest('error');
       return;
     }
@@ -760,7 +869,7 @@ function App() {
       return;
     }
     if (!apiKey.trim()) {
-      setError('Add your Groq API key first.');
+      setError('Authenticate the secure audit session first.');
       return;
     }
     if (!image && !liveTabActive) {
@@ -865,7 +974,15 @@ function App() {
       <Header hasImage={Boolean(image)} onNew={reset} liveTabActive={liveTabActive} />
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <ApiKeyPanel apiKey={apiKey} onChange={handleApiKeyChange} onClear={handleApiKeyClear} onTest={handleTestConnection} testState={testState} />
+        <SecurityPanel
+          authenticated={authVerified}
+          authConfigured={Boolean(serverHealth?.authConfigured)}
+          groqConfigured={Boolean(serverHealth?.groqConfigured)}
+          tokenPresent={Boolean(auditToken)}
+          busy={securityBusy}
+          onAuthenticate={handleAuthenticate}
+          onLogout={handleLogout}
+        />
 
         {!image ? (
           <UploadPanel onUpload={handleImageUpload} onStartLiveTab={() => void handleStartLiveTab()} liveTabSupported={liveTabSupported} liveTabBusy={liveTabBusy} />
@@ -939,7 +1056,7 @@ function App() {
                     intervalSeconds={autoIntervalSeconds}
                     stats={autoStats}
                     onToggle={handleToggleAutoTest}
-                    onIntervalChange={setAutoIntervalSeconds}
+                    onIntervalChange={handleAutoIntervalChange}
                   />
                 )}
 
@@ -955,9 +1072,25 @@ function App() {
                     min="50"
                     max="90"
                     value={minConfidence}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setMinConfidence(Number(event.target.value))}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => handleMinConfidenceChange(Number(event.target.value))}
                     className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-700 accent-green-500"
                   />
+                </div>
+
+                <div className="rounded-lg border border-slate-800 bg-slate-900/55 p-2.5">
+                  <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-slate-500">Configured asset</div>
+                  <input
+                    value={configuredAsset}
+                    onChange={(event) => handleConfiguredAssetChange(event.target.value)}
+                    placeholder="e.g. CAD/CHF (OTC)"
+                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-[10px] font-mono text-slate-200 outline-none focus:border-cyan-500"
+                  />
+                  <div className="mt-1 text-[8px] leading-relaxed text-slate-600">OCR must match this asset exactly after normalization, otherwise the frame stays NEUTRAL.</div>
+                </div>
+
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-2.5">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-cyan-300">Stage 3B validation lock</div>
+                  <div className="mt-1 text-[8px] leading-relaxed text-slate-500">Explicit 1m badge + time-axis/candle-pitch + asset OCR + price/time axes are checked. Production AI remains blocked until multi-session / multi-asset / multi-window validation is complete.</div>
                 </div>
 
                 {precisionProfile && (
@@ -1044,7 +1177,7 @@ function App() {
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.4 • Deterministic single-frame gate • AI blocked until verified M1 + asset • AUDIT LOCK ON</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.5 • Stage 3B verifier + authenticated audit/Groq proxy • validation coverage lock ON • AUDIT LOCK ON</div></footer>
     </div>
   );
 }

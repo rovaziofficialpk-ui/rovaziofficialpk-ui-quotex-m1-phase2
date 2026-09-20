@@ -1,0 +1,39 @@
+{
+  "version": "quotex-desktop-observed-v1.1.0",
+  "calibration": {
+    "sameSessionFrames": 10,
+    "frameSize": [736, 334],
+    "aspectRatio": 2.2036,
+    "tradeOutcomesUsed": false
+  },
+  "regions": {
+    "primary": { "x": 0.04755435, "y": 0.12874251, "w": 0.83967391, "h": 0.87125749 },
+    "plotArea": { "x": 0.04755435, "y": 0.12874251, "w": 0.76766304, "h": 0.76946108 },
+    "zoomedNewest": { "x": 0.38, "y": 0.12874251, "w": 0.43521739, "h": 0.76946108 },
+    "priceAxis": { "x": 0.81521739, "y": 0.12874251, "w": 0.07201087, "h": 0.76946108 },
+    "timeAxis": { "x": 0.04755435, "y": 0.89820359, "w": 0.83967391, "h": 0.10179641 },
+    "assetLabel": { "x": 0.05978261, "y": 0.05389222, "w": 0.16304348, "h": 0.09580838 },
+    "timeframeBadge": { "x": 0.07472826, "y": 0.88922156, "w": 0.03668478, "h": 0.08682635 },
+    "tradePanel": { "x": 0.88722826, "y": 0.05389222, "w": 0.11277174, "h": 0.94610778 },
+    "payoutExpiryPanel": { "x": 0.88722826, "y": 0.05389222, "w": 0.11277174, "h": 0.43413174 }
+  },
+  "evidence": {
+    "explicitTimeframeIndicatorFound": "1m badge in lower-left chart toolbar",
+    "expiryTimerNotUsedAsTimeframe": true,
+    "timeframeTemplateSameSessionPasses": 10,
+    "timeframeTemplateSameSessionTotal": 10,
+    "timeframeTemplateMinimumObservedCorrelation": 0.9995,
+    "highResolutionTimeAxisOcrIntervals": 13,
+    "highResolutionMedianCandlePitchPx": 45.5,
+    "highResolutionDerivedMinutesPerCandleMedian": 1.0,
+    "highResolutionDerivedMinutesPerCandleRange": [0.9891, 1.0],
+    "highResolutionAssetOcr": "CAD/CHF (OTC)",
+    "highResolutionAssetOcrConfidence": [91.095123, 96.511803]
+  },
+  "limitations": [
+    "Only one real primary asset (CAD/CHF OTC) is available for OCR validation.",
+    "No real non-M1 Quotex frame is available.",
+    "Calibration material is from one session and one observed viewport family.",
+    "Production coverage lock remains closed until unseen multi-session validation is supplied."
+  ]
+}

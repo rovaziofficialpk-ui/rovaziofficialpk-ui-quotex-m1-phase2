@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient';
 export interface AuditArtifact {
   role: string;
   dataUrl: string;
@@ -8,6 +9,7 @@ export interface AuditArtifact {
   sourceFrameSize: { width: number; height: number } | null;
   sourceFrameSha256: string | null;
   capturedAt: string | null;
+  privacyMasked?: boolean;
 }
 
 function dataUrlBytes(dataUrl: string): { bytes: Uint8Array; mimeType: string } {
@@ -64,6 +66,50 @@ export async function buildAuditArtifact(args: {
   };
 }
 
+export async function buildPrivacyMaskedSourceArtifact(
+  dataUrl: string,
+  capturedAt: string | null,
+): Promise<AuditArtifact> {
+  const originalHash = await sha256DataUrl(dataUrl);
+  const dimensions = await imageDimensions(dataUrl);
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const target = new Image();
+    target.onload = () => resolve(target);
+    target.onerror = () => reject(new Error('Could not prepare privacy-masked audit source frame.'));
+    target.src = dataUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Privacy masking canvas is unavailable.');
+  context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+
+  context.fillStyle = '#000';
+  context.fillRect(0, 0, Math.round(dimensions.width * 0.055), dimensions.height);
+  context.fillRect(
+    Math.round(dimensions.width * 0.78),
+    0,
+    Math.round(dimensions.width * 0.22),
+    Math.round(dimensions.height * 0.125),
+  );
+
+  const maskedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  const maskedHash = await sha256DataUrl(maskedDataUrl);
+  return {
+    role: 'masked_source_frame',
+    dataUrl: maskedDataUrl,
+    sha256: maskedHash.sha256,
+    mimeType: maskedHash.mimeType,
+    byteLength: maskedHash.byteLength,
+    cropRect: { x: 0, y: 0, width: dimensions.width, height: dimensions.height },
+    sourceFrameSize: dimensions,
+    sourceFrameSha256: originalHash.sha256,
+    capturedAt,
+    privacyMasked: true,
+  };
+}
+
 export async function buildFullFrameArtifact(
   role: string,
   dataUrl: string,
@@ -85,7 +131,7 @@ export async function buildFullFrameArtifact(
 }
 
 export async function persistDurableAudit(record: Record<string, unknown>, artifacts: AuditArtifact[]): Promise<{ recordHash: string }> {
-  const response = await fetch('/api/audit/records', {
+  const response = await apiFetch('/api/audit/records', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ record, artifacts }),
