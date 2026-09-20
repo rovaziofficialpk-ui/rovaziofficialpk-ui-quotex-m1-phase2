@@ -14,6 +14,7 @@ export interface ReproDecisionRecord {
   capturedAt: string | null;
   decisionAt: string;
   source: 'live_tab' | 'upload' | 'paste';
+  captureEnvironment: unknown;
   configuredTimeframe: 'M1';
   layoutProfileVersion: string | null;
   layoutReason: string;
