@@ -121,6 +121,24 @@ test('deterministic structural gate rejects each mutated invalid condition', () 
   assert.ok(gate({ ...baseMetrics, candleCount: 1 }).reasons.includes('CANDLE_COUNT_OUT_OF_RANGE'));
   assert.ok(gate({ ...baseMetrics, lastCandleXFraction: 0.2 }).reasons.includes('NEWEST_CANDLE_NOT_VISIBLE'));
   assert.ok(gate({ ...baseMetrics, currentPriceBlueRatio: 0 }).reasons.includes('CURRENT_PRICE_MARKER_MISSING'));
+
+  const fieldGate = (overrides = {}) => screenPipeline.decideDeterministicScreenGate({
+    metrics: baseMetrics,
+    configuredTimeframe: 'M1',
+    parsedTimeframe: 'M1',
+    configuredAsset: 'EUR/USD',
+    parsedAsset: 'EUR/USD',
+    priceAxisReadable: true,
+    timeAxisReadable: true,
+    ...overrides,
+  });
+  assert.ok(fieldGate({ priceAxisReadable:false }).reasons.includes('PRICE_AXIS_UNREADABLE'));
+  assert.ok(fieldGate({ timeAxisReadable:false }).reasons.includes('TIME_AXIS_UNREADABLE'));
+  assert.ok(fieldGate({ parsedTimeframe:null }).reasons.includes('TIMEFRAME_UNVERIFIED'));
+  assert.ok(fieldGate({ parsedTimeframe:'M5' }).reasons.includes('TIMEFRAME_MISMATCH'));
+  assert.ok(fieldGate({ configuredAsset:null }).reasons.includes('ASSET_UNVERIFIED'));
+  assert.ok(fieldGate({ parsedAsset:null }).reasons.includes('ASSET_UNVERIFIED'));
+  assert.ok(fieldGate({ parsedAsset:'GBP/USD' }).reasons.includes('ASSET_MISMATCH'));
 });
 
 test('time-axis production function handles midnight rollover and separates M1 from M5 geometry', () => {
@@ -139,9 +157,15 @@ test('time-axis production function handles midnight rollover and separates M1 f
   ];
   const a = screenFields.deriveMinutesPerCandle(m1, 45.5);
   const b = screenFields.deriveMinutesPerCandle(m5, 45.5);
+  const insufficient = screenFields.deriveMinutesPerCandle(m1.slice(0, 3), 45.5);
+  const noPitch = screenFields.deriveMinutesPerCandle(m1, null);
   assert.equal(a.intervalCount, 3);
   assert.ok(Math.abs(a.minutesPerCandle - 1) <= screenFields.MINUTES_PER_CANDLE_TOLERANCE);
   assert.ok(Math.abs(b.minutesPerCandle - 1) > screenFields.MINUTES_PER_CANDLE_TOLERANCE);
+  assert.equal(insufficient.intervalCount, 0);
+  assert.equal(insufficient.minutesPerCandle, null);
+  assert.equal(noPitch.intervalCount, 0);
+  assert.equal(noPitch.minutesPerCandle, null);
 });
 
 test('price-axis parser fails closed below its minimum label count', () => {
@@ -153,6 +177,14 @@ test('price-axis parser fails closed below its minimum label count', () => {
   const result = screenFields.parsePriceAxis(tokens, '1.1000 1.0995 1.0990');
   assert.equal(result.readable, false);
   assert.equal(result.reasonCode, 'INSUFFICIENT_PRICE_LABELS');
+
+  const lowConfidence = screenFields.parsePriceAxis([
+    { text:'1.1000', confidence:69, left:0, top:0, width:10, height:10 },
+    { text:'1.0995', confidence:69, left:0, top:20, width:10, height:10 },
+    { text:'1.0990', confidence:69, left:0, top:40, width:10, height:10 },
+    { text:'1.0985', confidence:69, left:0, top:60, width:10, height:10 },
+  ], '1.1000 1.0995 1.0990 1.0985');
+  assert.equal(lowConfidence.readable, false);
 });
 
 test('model validator rejects malformed JSON and invalid enum', () => {
@@ -280,4 +312,12 @@ test('outcome summary keeps full-sample expectancy null when any expired outcome
 test('source guard: production payout breakeven formula is exactly 1/(1+payout)', () => {
   const stage = fs.readFileSync(new URL('../src/services/screenStage3C.ts', import.meta.url), 'utf8');
   assert.match(stage, /breakevenWinRate:\s*Number\(\(1 \/ \(1 \+ payoutDecimal\)\)\.toFixed\(6\)\)/);
+});
+
+
+test('coverage locks remain hard false in both field and Stage3C verifiers', () => {
+  const fields = fs.readFileSync(new URL('../src/services/screenFieldVerification.ts', import.meta.url), 'utf8');
+  const stage = fs.readFileSync(new URL('../src/services/screenStage3C.ts', import.meta.url), 'utf8');
+  assert.match(fields, /export const LAYOUT_VALIDATION_COVERAGE_COMPLETE = false/);
+  assert.match(stage, /export const STAGE3C_VALIDATION_COVERAGE_COMPLETE = false/);
 });
