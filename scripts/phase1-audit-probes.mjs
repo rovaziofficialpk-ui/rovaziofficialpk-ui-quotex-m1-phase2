@@ -481,11 +481,11 @@ findings.push({
 
 findings.push({
   id:'R1-PERSISTED-HISTORY-DIRECTIONAL',
-  status: /return parsed\.filter\(\(item\) => item && typeof item\.id === 'string'\)/.test(files.storageSource)
+  status: /\.filter\(\(item\) => item && typeof item === 'object' && typeof item\.id === 'string'\)/.test(files.storageSource)
     && /\{item\.bias\}/.test(files.historyPanelSource)
     ? 'CONFIRMED_FAIL'
     : 'UNVERIFIED',
   evidence: 'loadHistory validates only that id is a string and does not force persisted bias through the audit edge gate. HistoryPanel renders item.bias directly, so a legacy/tampered CALL/PUT record remains user-visible while AUDIT LOCK is on.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v12', findings }, null, 2));
+console.log(JSON.stringify({ probeVersion:'phase1-v13', findings }, null, 2));
