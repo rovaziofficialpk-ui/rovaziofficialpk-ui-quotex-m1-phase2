@@ -78,7 +78,7 @@ for (const mutant of mutants) {
     continue;
   }
   fs.writeFileSync(mutant.file, original.replace(mutant.from, mutant.to));
-  const run = spawnSync(process.execPath, ['--test', 'tests/phase1-production-runtime.test.mjs'], {
+  const run = spawnSync(process.execPath, ['--experimental-strip-types', '--loader', './tests/phase1-ts-loader.mjs', '--test', 'tests/phase1-production-runtime.audit.mjs'], {
     encoding: 'utf8',
     env: process.env,
   });
