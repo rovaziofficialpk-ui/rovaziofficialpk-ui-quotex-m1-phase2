@@ -467,4 +467,13 @@ findings.push({
   evidence: 'Audit source/crops are transformed: primary/plot crops use JPEG and the source artifact is privacy-masked JPEG. Their bytes are not identical to source pixels used for the original deterministic computation.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v10', findings }, null, 2));
+
+findings.push({
+  id:'BACKTEST-ISO-FRACTIONAL-TIMESTAMP-CORRUPTION',
+  status: /Date\.parse\(trimmed\.replace\(\/\\\.\/g, '-'\)\)/.test(files.backtestService)
+    ? 'CONFIRMED_BUG'
+    : 'UNVERIFIED',
+  evidence: "parseTimestamp replaces every '.' with '-' before Date.parse; standard ISO strings containing fractional seconds such as 2026-09-20T00:00:00.000Z are corrupted and become unparseable, pushing the dataset toward timeframeStatus='unknown'.",
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v11', findings }, null, 2));
