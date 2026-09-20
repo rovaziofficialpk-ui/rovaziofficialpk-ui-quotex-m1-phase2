@@ -125,7 +125,7 @@ try {
     schemaVersion: 'decision-record-v1',
     recordId: 'tamper-record-0001',
     configVersion: 'input-pipeline-v1.6.0',
-    promptVersion: 'vision-signal-v5.0.0-server-fixed',
+    promptVersion: 'vision-signal-v4.0.0',
     modelName: 'qwen/qwen3.8-27b',
     temperature: 0,
     seed: 424242,
