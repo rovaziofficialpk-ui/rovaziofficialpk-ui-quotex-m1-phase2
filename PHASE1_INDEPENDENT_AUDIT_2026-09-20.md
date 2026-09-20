@@ -537,3 +537,77 @@ P2:
 21. update README, PHASES, Stage reports and stale UI error/help text to match current code
 
 Any approved Phase 2 change to a threshold, template, layout or rule must bump the spec ID and state acceptance impact. At this Phase 1 baseline there are **0 untouched acceptance sessions**, and AUDIT LOCK / LAYOUT_VALIDATION_INCOMPLETE remain ON.
+
+
+## Final Phase 1 addendum — additional confirmed defects
+
+The following findings were added after the earlier report sections. They are audit-only discoveries; production was not changed.
+
+### HIGH — exact replay is under-specified even when model output is retained
+`ReproDecisionRecord` does not store the user-selected `minConfidence` threshold or the applied precision-profile rule/version, although both can change the pre-audit gate result. This is independent of the separate native-frame retention problem. R4 therefore remains **REFUTED** even if a future replay uses the stored raw model response.
+
+### HIGH — price-axis occlusion contract is not fail-closed
+The requested E4 contract says an occluded price axis must be rejected, not repaired. Current `verifyPriceAxis` detects the current-price-tag blue occlusion band, drops labels whose centers fall inside that band, and then allows the remaining labels to satisfy monotonicity/R²/spacing thresholds. Therefore an occluded axis can still become `readable=true`. This is a **confirmed spec violation**; no threshold was changed during Phase 1.
+
+### HIGH — Stage 11 accepts an invalid runtime direction as PUT semantics
+A direct production-function counterexample passed `direction='SIDEWAYS'` to `resolveOutcome`. Because the resolver implements CALL vs `else`, the invalid value falls through to the PUT branch and produced a directional outcome instead of null/reason. This is reachable in the broader system because the server outcome endpoint also accepts arbitrary direction values. Stage 11 therefore has another fail-open input-validation path.
+
+### MEDIUM — Auto Test model-call accounting is false on deterministic rejects
+Auto Test sets `autoLastAiAtRef` before calling `executeAiAnalysis` and increments `aiRuns` after that function returns. But `executeAiAnalysis` can return a deterministic NEUTRAL before Groq is called. Consequently:
+- the UI can increment “AI runs” when zero model calls occurred;
+- the 15-second “AI cooldown” can start after a pre-model reject and suppress later changed frames.
+
+This is confirmed by code trace. It is particularly relevant while `LAYOUT_VALIDATION_INCOMPLETE` is ON, because the normal live path remains pre-model.
+
+### MEDIUM — reproducibility durability depends on IndexedDB first
+`persistReproDecision` awaits the local IndexedDB append before entering the server-write try block. If IndexedDB fails, the durable server write is never attempted. Also, the local record is inserted with `durableWrite='pending'` and is never updated to `ok` or `failed`. Thus local audit metadata cannot truthfully report the final durability state.
+
+### MEDIUM — manual analysis can overlap
+The manual Analyze eligibility does not include `!analyzing` and there is no manual equivalent of `autoCycleBusyRef`. Rapid repeated clicks can overlap analysis/state/audit operations. The Auto Test path has an explicit busy ref; the manual path does not.
+
+### MEDIUM — preflight blocks lack a stable machine-readable reason code
+`ImagePreflightResult` contains status, score and human warning strings but no stable `reasonCode`. Blank/blurred/severely cropped preflight failures therefore cannot satisfy the R8 requirement for a durable, specific failure code without interpreting text.
+
+### MEDIUM — scheduled outcome capture has a stale-busy race
+The Stage 11 expiry timer callback captures the render-time `busy` value, while `busy` is not an effect dependency. A user-triggered “Capture now” can overlap the already-scheduled timer callback and create competing expiry captures/events. The server also accepts duplicate/weak outcome events, compounding this race.
+
+### MEDIUM — Backtest converts unknown evidence into asserted M1 visual evidence
+The Backtest run rejects `not_m1` but permits `timeframeStatus='unknown'`. Yet the generated image always writes `M1` and “1-minute candles” into the chart sent to the model. This converts an unknown timeframe into a positive visual assertion rather than preserving the unknown.
+
+Related confirmed Backtest reproducibility/data-provenance defects:
+- ISO timestamps with fractional seconds are corrupted by replacing every `.` with `-`, pushing valid ISO data toward `timeframeStatus='unknown'`;
+- chart time labels use the browser's local timezone/locale, so the same timestamps can render differently on another machine;
+- the selected pair and FOREX/OTC market are user labels and are not verified against CSV provenance;
+- JSON/CSV exports omit frozen spec/config, prompt/model, minConfidence, source-dataset hash, timezone/locale and other parameters needed for exact replay.
+
+### R1 — history/export paths also expose directional values under AUDIT LOCK
+Beyond Backtest:
+- a legacy/tampered local history item with `bias='CALL'` is accepted and rendered directly by HistoryPanel;
+- the history CSV explicitly exports `proposedBias`, and JSON export serializes the full signal object, including the model proposal/raw response.
+
+Thus R1 is **REFUTED by multiple independent user-visible paths**, even though the normal live SignalCard final bias is forced to NEUTRAL.
+
+### TIMEFRAME v2 post-fix validation remains UNVERIFIED
+The historical root cause is supported by evidence, but the deployed v2 matcher has not yet satisfied the requested fresh post-deployment verification:
+- no readable post-v2 native record is currently available through the exhausted Railway read-only agent;
+- no fresh real 5s/15s/30s/5m/15m negative controls have been supplied;
+- the v2 matcher retained the old template/0.985 threshold rather than obtaining a fresh native-resolution calibration corpus.
+
+Therefore no claim is made that the v2 matcher now passes valid live M1 frames. AUDIT LOCK and LAYOUT_VALIDATION_INCOMPLETE correctly remain ON.
+
+## Phase 1 completion state
+
+Production main remains unchanged at `eb2ba5b2b66bf85b2fe1183ac6a78f0c99d2421b`; the Railway production deployment inspected during this audit is still the successful main deployment built from that commit. All Phase 1 code additions are confined to the audit branch/PR and are tests, probes, workflow evidence or this report.
+
+The most recent completed audit runs continue to show:
+- production baseline suite: 57/57 PASS;
+- direct production-module audit suite: at least 28/28 PASS before the final invalid-direction counterexample was added, with the subsequent counterexample run also passing;
+- strict TypeScript: PASS;
+- production build: PASS;
+- sampled mutation checks: 26/26 sabotages detected;
+- imported production-module coverage: about 62.5% lines / 80.4% branches / 64.1% functions at the latest downloaded evidence point;
+- linter: NOT CONFIGURED;
+- lockfile: MISSING;
+- real negative-control/acceptance corpus: INCOMPLETE.
+
+No Phase 2 fix has been applied.
