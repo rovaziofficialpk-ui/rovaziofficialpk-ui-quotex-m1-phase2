@@ -7,6 +7,7 @@ const edgeGate = await import('../src/services/edgeGate.ts');
 const screenPipeline = await import('../src/services/screenPipeline.ts');
 const screenFields = await import('../src/services/screenFieldVerification.ts');
 const outcomeResolver = await import('../src/services/outcomeResolver.ts');
+const precisionOptimizer = await import('../src/services/precisionOptimizer.ts');
 
 function modelPayload(overrides = {}) {
   return {
@@ -207,4 +208,76 @@ test('source guard: chart type, price-axis, clock and payout checks remain prese
   assert.match(stage, /priceStepCv !== null && priceStepCv <= PRICE_AXIS_STEP_CV_MAX/);
   assert.match(stage, /const stale = delta > CLOCK_STALE_TOLERANCE_SECONDS/);
   assert.match(stage, /if \(candidates\.length !== 1\)/);
+});
+
+
+test('Wilson lower 95, win-rate denominator and tie handling match independent known values', () => {
+  const rows = Array.from({ length: 100 }, (_, index) => {
+    let outcome = 'WIN';
+    if (index < 70) {
+      outcome = index < 56 ? 'WIN' : 'LOSS';
+    } else {
+      const h = index - 70;
+      outcome = h < 24 ? 'WIN' : h < 28 ? 'LOSS' : 'TIE';
+    }
+    return {
+      index,
+      timestamp: index,
+      bias: 'CALL',
+      confidence: 100,
+      confirmationCount: 4,
+      opposingConfirmations: 0,
+      chartQuality: 'clear',
+      warningCount: 0,
+      outcome,
+    };
+  });
+
+  const result = precisionOptimizer.optimizePrecisionProfile(rows, 'EUR/USD', 'FOREX', 80);
+  assert.ok(result.profile);
+  assert.equal(result.profile.holdout.wins, 24);
+  assert.equal(result.profile.holdout.losses, 4);
+  assert.equal(result.profile.holdout.ties, 2);
+  assert.equal(result.profile.holdout.winRate, 85.7);
+  assert.equal(result.profile.holdout.wilsonLower95, 68.5);
+});
+
+test('outcome summary keeps full-sample expectancy null when any expired outcome is unresolved', () => {
+  const trade = (id, outcome, unitReturn) => ({
+    tradeId: id,
+    armedAt: new Date(0).toISOString(),
+    dueAt: new Date(60000).toISOString(),
+    direction: 'CALL',
+    entry: {},
+    expiry: {},
+    resolverOutcome: outcome,
+    resolverNullReason: outcome === null ? 'ENTRY_PRICE_UNREADABLE' : null,
+    unitReturn,
+    platformOutcome: null,
+    agreement: null,
+    settlementRuleVersion: 'x',
+    settlementRuleStatus: 'DOCUMENTED_VERIFIED',
+    screenValidationStatus: 'PENDING_30_MANUAL_DEMO_TRADES',
+  });
+
+  const complete = outcomeResolver.summarizeOutcomeTrades([
+    trade('w', 'WIN', 0.9),
+    trade('l', 'LOSS', -1),
+    trade('t', 'TIE', 0),
+  ]);
+  assert.equal(complete.fullSampleExpectancy, -0.033333);
+  assert.equal(complete.meanUnitReturnKnown, -0.033333);
+
+  const incomplete = outcomeResolver.summarizeOutcomeTrades([
+    trade('w', 'WIN', 0.9),
+    trade('u', null, null),
+  ]);
+  assert.equal(incomplete.fullSampleExpectancy, null);
+  assert.equal(incomplete.resolverNull, 1);
+  assert.ok(incomplete.selectionBiasWarning);
+});
+
+test('source guard: production payout breakeven formula is exactly 1/(1+payout)', () => {
+  const stage = fs.readFileSync(new URL('../src/services/screenStage3C.ts', import.meta.url), 'utf8');
+  assert.match(stage, /breakevenWinRate:\s*Number\(\(1 \/ \(1 \+ payoutDecimal\)\)\.toFixed\(6\)\)/);
 });
