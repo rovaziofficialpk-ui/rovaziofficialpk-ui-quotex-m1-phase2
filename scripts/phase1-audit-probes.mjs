@@ -21,6 +21,8 @@ const files = {
   auditSignalLogSource: fs.readFileSync('src/services/auditSignalLog.ts','utf8'),
   auditArtifactsSource: fs.readFileSync('src/services/auditArtifacts.ts','utf8'),
   screenPipelineSource: fs.readFileSync('src/services/screenPipeline.ts','utf8'),
+  historyPanelSource: fs.readFileSync('src/components/HistoryPanel.tsx','utf8'),
+  storageSource: fs.readFileSync('src/services/storage.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -476,4 +478,14 @@ findings.push({
   evidence: "parseTimestamp replaces every '.' with '-' before Date.parse; standard ISO strings containing fractional seconds such as 2026-09-20T00:00:00.000Z are corrupted and become unparseable, pushing the dataset toward timeframeStatus='unknown'.",
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v11', findings }, null, 2));
+
+findings.push({
+  id:'R1-PERSISTED-HISTORY-DIRECTIONAL',
+  status: /return parsed\.filter\(\(item\) => item && typeof item\.id === 'string'\)/.test(files.storageSource)
+    && /\{item\.bias\}/.test(files.historyPanelSource)
+    ? 'CONFIRMED_FAIL'
+    : 'UNVERIFIED',
+  evidence: 'loadHistory validates only that id is a string and does not force persisted bias through the audit edge gate. HistoryPanel renders item.bias directly, so a legacy/tampered CALL/PUT record remains user-visible while AUDIT LOCK is on.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v12', findings }, null, 2));
