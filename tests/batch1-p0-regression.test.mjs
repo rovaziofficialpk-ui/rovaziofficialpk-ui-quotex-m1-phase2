@@ -323,7 +323,7 @@ test('Batch 1 P0: source guards keep timeout, native-frame proof, request limits
   assert.match(server, /signal: controller\.signal/);
   assert.match(server, /GROQ_UPSTREAM_TIMEOUT_MS/);
   assert.match(server, /validateAnalyzeRequest\(await readJson\(req, ANALYZE_MAX_BODY_BYTES\)\)/);
-  assert.match(server, /decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES/);
+  assert.match(server, /if \(decoded\.bytes\.length > ANALYZE_MAX_IMAGE_BYTES\) \{/);
   assert.match(server, /verifyNativeFrame\(/);
   assert.match(server, /if \(!verification\.eligibleForModel\)/);
   assert.match(server, /fixedGroqPayload\(modelImage\)/);
@@ -335,4 +335,56 @@ test('Batch 1 P0: source guards keep timeout, native-frame proof, request limits
   assert.match(gate, /TIMEFRAME_TEMPLATE_THRESHOLD = 0\.985/);
   assert.match(gate, /CHARTTYPE_THRESHOLD = 0\.92/);
   assert.match(gate, /PRICE_AXIS_R2_MIN = 0\.995/);
+});
+
+
+test('Batch 1 P0: cross-process file lock preserves one linear chain', { timeout: 90_000 }, async (t) => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'quotex-batch1-multiprocess-'));
+  const token = 'batch1-shared-token';
+  const ports = [43831, 43832];
+  const children = [];
+  const bases = [];
+
+  for (const port of ports) {
+    const child = spawn(process.execPath, ['--import', './tests/batch1-groq-fetch-spy.mjs', 'server.mjs'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(port),
+        AUDIT_DATA_DIR: dataDir,
+        AUDIT_AUTH_TOKEN: token,
+        GROQ_API_KEY: 'test-groq-key',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    children.push(child);
+    bases.push('http://127.0.0.1:' + port);
+  }
+
+  t.after(async () => {
+    for (const child of children) child.kill('SIGTERM');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  await Promise.all(bases.map((base) => waitForHealth(base)));
+
+  const headers = { 'X-Audit-Token': token, 'Content-Type': 'application/json' };
+  const writes = [];
+  for (let index = 0; index < 120; index += 1) {
+    const base = bases[index % bases.length];
+    writes.push(requestJson(base, '/api/audit/records', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ record: validRecord(2000 + index), artifacts: [] }),
+    }));
+  }
+  const responses = await Promise.all(writes);
+  assert.equal(responses.filter((item) => item.response.status !== 201).length, 0);
+
+  const recordsPath = path.join(dataDir, 'records.ndjson');
+  const chain = await verifyHashChain(recordsPath);
+  assert.equal(chain.count, 120);
+  assert.equal(chain.valid, true);
+  assert.equal(chain.errors.length, 0);
 });
