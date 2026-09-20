@@ -14,6 +14,7 @@ const files = {
   precision: fs.readFileSync('src/services/precisionOptimizer.ts','utf8'),
   tabCapture: fs.readFileSync('src/services/tabCapture.ts','utf8'),
   outcomeResolverSource: fs.readFileSync('src/services/outcomeResolver.ts','utf8'),
+  backtestService: fs.readFileSync('src/services/backtest.ts','utf8'),
 };
 
 const signalLogic = await import('../src/signalLogic.ts');
@@ -332,4 +333,39 @@ findings.push({
   evidence: 'The CLI replay script also reduces every stored decision to NEUTRAL instead of recomputing the deterministic pipeline.',
 });
 
-console.log(JSON.stringify({ probeVersion:'phase1-v6', findings }, null, 2));
+
+findings.push({
+  id:'BACKTEST-UNKNOWN-TIMEFRAME-ALLOWED',
+  status: /if \(dataset\.timeframeStatus === 'not_m1'\)/.test(files.backtest)
+    && !/if \(dataset\.timeframeStatus !== 'm1'\)/.test(files.backtest)
+    ? 'CONFIRMED_FAIL_OPEN_RESEARCH_PATH'
+    : 'UNVERIFIED',
+  evidence: "Backtest run rejects only timeframeStatus='not_m1'; timeframeStatus='unknown' proceeds to AI replay.",
+});
+
+findings.push({
+  id:'BACKTEST-SYNTHETIC-M1-TIMESTAMPS',
+  status: /const timestamp = parsedTime \?\? \(\(candles\.length \+ 1\) \* 60_000\)/.test(files.backtestService)
+    ? 'CONFIRMED_GUESS'
+    : 'UNVERIFIED',
+  evidence: 'Rows without parseable time are assigned synthetic 60-second timestamps. The dataset is still marked timeframeStatus=unknown, but the run path allows unknown.',
+});
+
+findings.push({
+  id:'BACKTEST-OHLC-INVARIANTS-INCOMPLETE',
+  status: /high < low/.test(files.backtestService)
+    && !/open > high|open < low|close > high|close < low/.test(files.backtestService)
+    ? 'CONFIRMED_WEAK'
+    : 'UNVERIFIED',
+  evidence: 'CSV validation rejects high<low but does not require open/close to lie within [low, high], so impossible OHLC rows can be accepted.',
+});
+
+findings.push({
+  id:'BACKTEST-M1-MEDIAN-ONLY',
+  status: /medianIntervalSeconds >= 45 && medianIntervalSeconds <= 75/.test(files.backtestService)
+    ? 'CONFIRMED_WEAK'
+    : 'UNVERIFIED',
+  evidence: 'Backtest timeframe classification uses only the median timestamp interval; a series containing substantial 30s/120s gaps can still be labeled M1 when the median is 60s.',
+});
+
+console.log(JSON.stringify({ probeVersion:'phase1-v7', findings }, null, 2));
