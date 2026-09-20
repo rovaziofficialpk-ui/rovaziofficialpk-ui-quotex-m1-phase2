@@ -53,6 +53,16 @@
 - Coverage, 3/4 vs 4/4 confirmation performance, and confidence buckets
 - JSON/CSV backtest export
 
+## Phase 4A.1 — Precision optimizer ✅
+- Chronological 70/30 train → untouched holdout split
+- Searches stricter confidence, confirmation, opposing-evidence, chart-quality, warning, and direction gates
+- Candidate selection uses training results only
+- 80%+ target is checked on untouched holdout, not training data
+- Requires at least 12 decided holdout signals before a profile can be enabled
+- Validated pair-specific precision profile can be applied to live/manual/Auto Test signals
+- Non-matching pairs and unvalidated profiles are never applied
+- Historical 80%+ validation is not represented as a future-profit guarantee
+
 ## Phase 4B — Forward validation & calibration ⏭️
 - Live outcome recorder from the shared Quotex tab
 - Pattern / asset / session analytics across larger datasets

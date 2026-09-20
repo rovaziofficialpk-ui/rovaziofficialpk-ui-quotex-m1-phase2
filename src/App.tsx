@@ -21,6 +21,12 @@ import {
 } from './services/autoTest';
 import { analyzeChartWithGroq, humanizeGroqError, testGroqConnection, type ContextImage, type ContextLabel } from './services/groq';
 import { analyzeImagePreflight, type ImagePreflightResult } from './services/imagePreflight';
+import {
+  applyPrecisionProfile,
+  loadPrecisionProfile,
+  savePrecisionProfile,
+  type PrecisionProfile,
+} from './services/precisionOptimizer';
 import { clearApiKey, HISTORY_LIMIT, loadApiKey, loadHistory, loadSettings, saveApiKey, saveHistory, saveSettings } from './services/storage';
 import {
   captureLiveTabFrame,
@@ -69,6 +75,7 @@ function App() {
   const [autoIntervalSeconds, setAutoIntervalSeconds] = useState(() => loadSettings().autoIntervalSeconds || AUTO_CAPTURE_INTERVAL_SECONDS);
   const [autoTestEnabled, setAutoTestEnabled] = useState(false);
   const [backtestOpen, setBacktestOpen] = useState(false);
+  const [precisionProfile, setPrecisionProfile] = useState<PrecisionProfile | null>(() => loadPrecisionProfile());
   const [autoStats, setAutoStats] = useState<AutoTestStats>({
     status: 'idle',
     checks: 0,
@@ -320,11 +327,12 @@ function App() {
       preflight: analysisPreflight,
       contextImages: extraImages,
     });
-    setSignal(result.signal);
+    const gatedSignal = applyPrecisionProfile(result.signal, precisionProfile);
+    setSignal(gatedSignal);
     setResponseTime(result.responseTimeMs);
-    const historyItem = createHistoryItem(result.signal, result.responseTimeMs, minConfidence);
+    const historyItem = createHistoryItem(gatedSignal, result.responseTimeMs, minConfidence);
     setHistory((current) => [historyItem, ...current].slice(0, HISTORY_LIMIT));
-    return result.signal;
+    return gatedSignal;
   };
 
   const handleToggleAutoTest = () => {
@@ -662,6 +670,28 @@ function App() {
                   />
                 </div>
 
+                {precisionProfile && (
+                  <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-purple-300">🎯 Precision profile active</div>
+                        <div className="mt-0.5 text-[9px] text-slate-500">
+                          {precisionProfile.sourcePair} · holdout {precisionProfile.holdout.winRate ?? '—'}% · conf ≥ {precisionProfile.rule.minConfidence}% · {precisionProfile.rule.minConfirmations}/4+
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          savePrecisionProfile(null);
+                          setPrecisionProfile(null);
+                        }}
+                        className="rounded bg-slate-800 px-2 py-1 text-[8px] font-bold text-slate-400 hover:bg-slate-700"
+                      >
+                        Disable
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={() => void analyzeChart()}
                   disabled={!canAnalyze}
@@ -722,13 +752,18 @@ function App() {
         <BacktestPanel
           apiKey={apiKey}
           minConfidence={minConfidence}
+          activePrecisionProfile={precisionProfile}
+          onApplyPrecisionProfile={(profile) => {
+            savePrecisionProfile(profile);
+            setPrecisionProfile(profile);
+          }}
           onClose={() => setBacktestOpen(false)}
         />
       )}
 
       {pasteToast && <div className="fixed bottom-6 right-6 bg-green-500 text-black px-4 py-2 rounded-lg shadow-lg font-bold text-sm z-50">✅ Image pasted + preflight started</div>}
 
-      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A • Forex backtest lab • Frozen Phase 3 gates • Live dashboard • Educational analysis only</div></footer>
+      <footer className="border-t border-slate-900 py-4 mt-8"><div className="max-w-6xl mx-auto px-4 text-center text-[10px] text-slate-600">Phase 4A.1 • Train/holdout precision optimizer • Validated profiles only • Educational analysis</div></footer>
     </div>
   );
 }

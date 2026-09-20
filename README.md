@@ -1,4 +1,4 @@
-# Quotex M1 Chart Signal AI — Phase 4A
+# Quotex M1 Chart Signal AI — Phase 4A.1
 
 A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qwen vision model.
 
@@ -38,6 +38,15 @@ A React + TypeScript + Vite educational chart-analysis prototype using Groq's Qw
 - Stop control plus JSON/CSV result export
 - 2.2 second request pacing between Groq analyses
 - Production build now runs TypeScript typecheck before Vite build
+
+## Phase 4A.1 — Precision optimizer
+- Chronological 70% training / 30% untouched holdout validation
+- Searches 432 conservative gate combinations without using holdout outcomes for rule selection
+- Tunes minimum AI confidence, 3/4 vs 4/4 confirmations, opposing evidence, clear-only chart quality, warning count, and CALL/PUT/BOTH direction
+- Targets 80%+ observed holdout win rate while enforcing minimum sample requirements
+- A profile is not enabled live unless the untouched holdout reaches 80%+ with at least 12 decided signals
+- Validated profiles are pair-specific and persisted locally
+- Live/manual/Auto Test outputs pass through the validated precision filter after the normal Phase 3 gates
 
 ## Run locally
 ```bash

@@ -17,16 +17,24 @@ import {
 } from '../services/backtest';
 import { analyzeChartWithGroq, humanizeGroqError } from '../services/groq';
 import { analyzeImagePreflight } from '../services/imagePreflight';
+import {
+  PRECISION_MIN_HOLDOUT_SIGNALS,
+  PRECISION_TARGET_WIN_RATE,
+  optimizePrecisionProfile,
+  type PrecisionProfile,
+} from '../services/precisionOptimizer';
 
 interface BacktestPanelProps {
   apiKey: string;
   minConfidence: number;
+  activePrecisionProfile: PrecisionProfile | null;
+  onApplyPrecisionProfile: (profile: PrecisionProfile) => void;
   onClose: () => void;
 }
 
 const SAMPLE_OPTIONS = [10, 25, 50, 100, 250];
 
-export function BacktestPanel({ apiKey, minConfidence, onClose }: BacktestPanelProps) {
+export function BacktestPanel({ apiKey, minConfidence, activePrecisionProfile, onApplyPrecisionProfile, onClose }: BacktestPanelProps) {
   const stopRef = useRef(false);
   const [market, setMarket] = useState<BacktestMarket>('FOREX');
   const [pair, setPair] = useState<string>('EUR/USD');
@@ -41,6 +49,13 @@ export function BacktestPanel({ apiKey, minConfidence, onClose }: BacktestPanelP
   const [runLabel, setRunLabel] = useState('');
 
   const summary = useMemo(() => summarizeBacktest(rows), [rows]);
+  const optimization = useMemo(
+    () => rows.length >= 40
+      ? optimizePrecisionProfile(rows, rows[0]?.pair || pair, rows[0]?.market || market)
+      : null,
+    [rows],
+  );
+  const optimizedProfile = optimization?.profile || null;
   const selectedPair = pair === 'CUSTOM'
     ? customPair.trim().toUpperCase()
     : pair;
@@ -313,6 +328,73 @@ export function BacktestPanel({ apiKey, minConfidence, onClose }: BacktestPanelP
               <Metric label="Coverage" value={`${summary.coverage}%`} />
             </div>
 
+            <div className="mt-3 rounded-xl border border-purple-500/30 bg-purple-500/5 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-purple-300">🎯 Precision Optimizer · target {PRECISION_TARGET_WIN_RATE}%+</div>
+                  <div className="mt-1 max-w-2xl text-[9px] leading-relaxed text-slate-500">
+                    Chooses stricter rules using only the first 70% of replay results, then scores that frozen rule on the untouched final 30%.
+                  </div>
+                </div>
+                {activePrecisionProfile && (
+                  <div className="rounded border border-green-500/30 bg-green-500/10 px-2 py-1 text-[9px] font-black text-green-300">
+                    LIVE PROFILE: {activePrecisionProfile.sourcePair} · {activePrecisionProfile.holdout.winRate ?? '—'}%
+                  </div>
+                )}
+              </div>
+
+              {!optimization ? (
+                <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-[10px] text-slate-500">
+                  Run at least 40 historical replay samples to unlock train → holdout optimization. For stronger evidence, use 100–250 samples.
+                </div>
+              ) : !optimizedProfile ? (
+                <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-[10px] text-yellow-300">
+                  No rule had enough training signals to optimize safely. Increase the backtest sample size.
+                </div>
+              ) : (
+                <>
+                  <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <OptimizerMetric label="Train win rate" value={optimizedProfile.train.winRate === null ? '—' : `${optimizedProfile.train.winRate}%`} />
+                    <OptimizerMetric label="Train signals" value={String(optimizedProfile.train.signals)} />
+                    <OptimizerMetric label="Holdout win rate" value={optimizedProfile.holdout.winRate === null ? '—' : `${optimizedProfile.holdout.winRate}%`} tone={optimizedProfile.validated ? 'text-green-400' : 'text-yellow-300'} />
+                    <OptimizerMetric label="Holdout signals" value={String(optimizedProfile.holdout.signals)} />
+                  </div>
+
+                  <div className="mt-2 grid gap-2 lg:grid-cols-[1fr_auto]">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-[9px] leading-relaxed text-slate-400">
+                      <span className="font-black text-slate-200">Chosen frozen rule:</span>
+                      {' '}confidence ≥ {optimizedProfile.rule.minConfidence}% · confirmations ≥ {optimizedProfile.rule.minConfirmations}/4 · opposing ≤ {optimizedProfile.rule.maxOpposing}
+                      {' '}· quality {optimizedProfile.rule.requireClear ? 'CLEAR only' : 'clear/usable'}
+                      {' '}· warnings ≤ {optimizedProfile.rule.maxWarnings >= 99 ? 'any' : optimizedProfile.rule.maxWarnings}
+                      {' '}· side {optimizedProfile.rule.biasMode}
+                      <div className="mt-1 text-slate-600">
+                        Train {optimization.trainRows} rows · holdout {optimization.holdoutRows} rows · {optimization.candidatesTested} candidate rules tested on train only.
+                      </div>
+                    </div>
+
+                    {optimizedProfile.validated ? (
+                      <button
+                        onClick={() => onApplyPrecisionProfile(optimizedProfile)}
+                        className="rounded-lg bg-green-500 px-4 py-2 text-[10px] font-black text-slate-950 hover:bg-green-400"
+                      >
+                        ✓ APPLY VALIDATED PROFILE
+                      </button>
+                    ) : (
+                      <div className="flex max-w-[260px] items-center rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-[9px] leading-relaxed text-yellow-200">
+                        Not enabled live: {optimizedProfile.validationReason}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={`mt-2 rounded-lg border p-2 text-[9px] leading-relaxed ${optimizedProfile.validated ? 'border-green-500/20 bg-green-500/5 text-green-200' : 'border-slate-800 bg-slate-950/50 text-slate-500'}`}>
+                    {optimizedProfile.validated
+                      ? `80%+ holdout threshold passed with at least ${PRECISION_MIN_HOLDOUT_SIGNALS} decided holdout signals. This is historical validation, not a guarantee of future outcomes.`
+                      : `Target not validated yet. The optimizer will not claim 80%+ or change live signals until the untouched holdout itself reaches ${PRECISION_TARGET_WIN_RATE}%+ with enough signals.`}
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
               <Card title="Confirmation performance">
                 <BucketRow bucket={summary.confirm3} />
@@ -388,6 +470,10 @@ export function BacktestPanel({ apiKey, minConfidence, onClose }: BacktestPanelP
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <div className="rounded-lg border border-slate-800 bg-slate-900/45 p-2.5"><div className="mb-2 text-[9px] font-black uppercase tracking-wider text-slate-500">{title}</div>{children}</div>;
+}
+
+function OptimizerMetric({ label, value, tone = 'text-slate-200' }: { label: string; value: string; tone?: string }) {
+  return <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-2 py-2"><div className="text-[8px] uppercase tracking-wider text-slate-600">{label}</div><div className={`mt-0.5 text-sm font-black ${tone}`}>{value}</div></div>;
 }
 
 function Metric({ label, value, tone = 'text-slate-200' }: { label: string; value: string; tone?: string }) {

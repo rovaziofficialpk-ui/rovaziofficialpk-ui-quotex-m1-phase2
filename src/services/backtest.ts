@@ -34,6 +34,16 @@ export interface BacktestRow {
   confidence: number;
   confirmationCount: number;
   confirmationScore: number;
+  opposingConfirmations: number;
+  chartQuality: TradeSignal['chartQuality'];
+  inputQualityScore: number;
+  inputQualityStatus: TradeSignal['inputQualityStatus'];
+  warningCount: number;
+  warnings: string[];
+  trend: TradeSignal['trend'];
+  momentum: TradeSignal['momentum'];
+  structure: TradeSignal['structure'];
+  candleSignal: TradeSignal['candleSignal'];
   pattern: string;
   gateReason: string;
   decisionClose: number;
@@ -444,6 +454,16 @@ export function createBacktestRow(args: {
     confidence: args.signal.confidence,
     confirmationCount: args.signal.confirmationCount,
     confirmationScore: args.signal.confirmationScore,
+    opposingConfirmations: args.signal.opposingConfirmations,
+    chartQuality: args.signal.chartQuality,
+    inputQualityScore: args.signal.inputQualityScore,
+    inputQualityStatus: args.signal.inputQualityStatus,
+    warningCount: args.signal.warnings.length,
+    warnings: [...args.signal.warnings],
+    trend: args.signal.trend,
+    momentum: args.signal.momentum,
+    structure: args.signal.structure,
+    candleSignal: args.signal.candleSignal,
     pattern: args.signal.pattern,
     gateReason: args.signal.gateReason || '',
     decisionClose: args.decision.close,
@@ -529,7 +549,9 @@ export function exportBacktestJson(rows: BacktestRow[], summary: BacktestSummary
 export function exportBacktestCsv(rows: BacktestRow[]): void {
   const headers = [
     'timeLabel', 'pair', 'market', 'bias', 'proposedBias', 'confidence', 'confirmationCount',
-    'pattern', 'decisionClose', 'expiryClose', 'actualDirection', 'outcome', 'gateReason', 'responseTimeMs',
+    'opposingConfirmations', 'chartQuality', 'inputQualityScore', 'inputQualityStatus', 'warningCount',
+    'trend', 'momentum', 'structure', 'candleSignal', 'pattern', 'decisionClose', 'expiryClose',
+    'actualDirection', 'outcome', 'gateReason', 'responseTimeMs',
   ];
   const csv = [
     headers.map(csvCell).join(','),
