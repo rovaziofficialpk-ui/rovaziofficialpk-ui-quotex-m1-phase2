@@ -1,0 +1,35 @@
+{
+  "sourceArtifact": "phase1-audit-evidence-9e0f1653.zip",
+  "sourceArtifactSha256": "bc27d6b6191e682cfd9014b726bbe1863d0de1bf248418c4059ddc8f24371ddc",
+  "phase1ServerIntegration": {
+    "probeVersion": "phase1-server-integration-v3",
+    "arbitraryAnalyzeStatus": 200,
+    "arbitraryAnalyzeReachedOutboundGroqSpy": true,
+    "malformedJsonStatus": 500,
+    "duplicateAuditRecordIdAccepted": true,
+    "duplicateAuditRecordStatus": 201,
+    "staticSecurityHeaders": {
+      "contentSecurityPolicy": null,
+      "xFrameOptions": null,
+      "permissionsPolicy": null,
+      "referrerPolicy": null,
+      "xContentTypeOptions": null
+    },
+    "concurrencyWrites": 120,
+    "concurrencyNon201": 0,
+    "hashChainBrokenLinks": 119,
+    "hashChainStrictlyLinear": false
+  },
+  "phase1SourceProbes": {
+    "R2-SERVER-GATE": "CONFIRMED_FAIL",
+    "AI-SERVER-PAYLOAD-NOT-FROZEN": "CONFIRMED_FAIL",
+    "AI-SERVER-UPSTREAM-TIMEOUT": "CONFIRMED_FAIL",
+    "AI-REQUEST-SIZE-POLICY": "CONFIRMED_MISMATCH",
+    "AUDIT-HASHCHAIN-CONCURRENCY": "UNVERIFIED",
+    "AUDIT-RECORD-SERVER-SCHEMA": "CONFIRMED_WEAK"
+  },
+  "reconciliation": {
+    "hashChainBefore": "CONFIRMED_FAIL",
+    "rationale": "Phase 1 source-only probe was UNVERIFIED, but the Phase 1 runtime integration probe executed 120 concurrent writes with 0 non-201 responses and measured 119 broken previousRecordHash links. Runtime evidence resolves the finding to CONFIRMED_FAIL."
+  }
+}
