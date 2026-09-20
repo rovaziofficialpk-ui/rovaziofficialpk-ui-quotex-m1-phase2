@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - audit/phase1-e2e-20260920
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
