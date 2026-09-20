@@ -48,6 +48,47 @@ test('R1 behavioral: audit edge gate forces CALL and PUT to NEUTRAL', () => {
   }
 });
 
+
+
+test('signal gate handles 4/4, 3/4, 2/4, low confidence, poor chart, wrong timeframe and context conflict', () => {
+  const run = (overrides={}, contextImages=0) => signalLogic.applySignalGate(
+    modelPayload({ confidence:95, ...overrides }),
+    70,
+    '{}',
+    { score:100, status:'pass' },
+    contextImages,
+  );
+
+  const four = run({ bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bullish' });
+  assert.equal(four.confirmationCount, 4);
+  assert.equal(four.bias, 'CALL');
+
+  const three = run({ bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'none' });
+  assert.equal(three.confirmationCount, 3);
+  assert.equal(three.bias, 'CALL');
+
+  const two = run({ bias:'CALL', trend:'bullish', momentum:'bullish', structure:'neutral', candleSignal:'none' });
+  assert.equal(two.confirmationCount, 2);
+  assert.equal(two.bias, 'NEUTRAL');
+
+  const oneOpposing = run({ bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bearish' });
+  assert.equal(oneOpposing.confirmationCount, 3);
+  assert.equal(oneOpposing.opposingConfirmations, 1);
+  assert.equal(oneOpposing.bias, 'CALL');
+
+  const twoOpposing = run({ bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bearish', candleSignal:'bearish' });
+  assert.equal(twoOpposing.opposingConfirmations, 2);
+  assert.equal(twoOpposing.bias, 'NEUTRAL');
+
+  assert.equal(run({ confidence:69, bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bullish' }).bias, 'NEUTRAL');
+  assert.equal(run({ chartQuality:'poor', bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bullish' }).bias, 'NEUTRAL');
+  assert.equal(run({ timeframe:'other', bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bullish' }).bias, 'NEUTRAL');
+  assert.equal(run({
+    bias:'CALL', trend:'bullish', momentum:'bullish', structure:'bullish', candleSignal:'bullish',
+    contextAlignment:'conflicting',
+  }, 1).bias, 'NEUTRAL');
+});
+
 test('deterministic structural gate rejects each mutated invalid condition', () => {
   const baseMetrics = {
     width: 1472,
